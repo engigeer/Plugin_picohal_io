@@ -37,7 +37,6 @@ static on_spindle_selected_ptr on_spindle_selected;
 static on_program_completed_ptr on_program_completed;
 static coolant_set_state_ptr on_coolant_changed; // For real time loop insertion
 static driver_reset_ptr driver_reset;
-static user_mcode_ptrs_t user_mcode;
 static on_execute_realtime_ptr on_execute_realtime, on_execute_delay;
 static on_realtime_report_ptr on_realtime_report;
 
@@ -56,11 +55,7 @@ static const modbus_callbacks_t callbacks = {
     .on_rx_exception = picohal_rx_exception
 };
 
-//important variables for retries
-static coolant_state_t current_coolant_state;
-static IPG_state_t current_IPG_state;
-static BLC_state_t current_BLC_state;
-static uint16_t current_BLC_flowrate = (10 | (10 << 8)); //Initialize both powder flow rates to 1.0RPM
+//static uint16_t current_BLC_flowrate = (10 | (10 << 8)); //Initialize both powder flow rates to 1.0RPM MOVE TO PICOHAL FW
 
 static sys_state_t current_state; 
 
@@ -228,60 +223,6 @@ static void picohal_set_coolant ()
     enqueue_message(cmd);
 }
 
-static void picohal_set_IPG_output (IPG_state_t IPG_state)
-{       
-    //set IPG state in register 0x110
-    modbus_message_t cmd = {
-        .context = NULL,
-        .crc_check = false,
-        .adu[0] = PICOHAL_ADDRESS,
-        .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x01,
-        .adu[3] = 0x10,
-        .adu[4] = 0x00,
-        .adu[5] = IPG_state.value & 0xFF,
-        .tx_length = 8,
-        .rx_length = 8
-    };
-    enqueue_message(cmd);
-}
-
-static void picohal_set_BLC_output (BLC_state_t BLC_state)
-{       
-    //set BLC state in register 0x120
-    modbus_message_t cmd = {
-        .context = NULL,
-        .crc_check = false,
-        .adu[0] = PICOHAL_ADDRESS,
-        .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x01,
-        .adu[3] = 0x20,
-        .adu[4] = 0x00,
-        .adu[5] = BLC_state.value & 0xFF,
-        .tx_length = 8,
-        .rx_length = 8
-    };
-    enqueue_message(cmd);
-}
-
-static void picohal_set_BLC_flowrate (uint16_t BLC_flowrate)
-{       
-    //set BLC flowrate in register 0x121
-    modbus_message_t cmd = {
-        .context = NULL,
-        .crc_check = false,
-        .adu[0] = PICOHAL_ADDRESS,
-        .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x01,
-        .adu[3] = 0x21,
-        .adu[4] = BLC_flowrate >> 8,
-        .adu[5] = BLC_flowrate & 0xFF,
-        .tx_length = 8,
-        .rx_length = 8
-    };
-    enqueue_message(cmd);
-}
-
 static void picohal_create_event (picohal_events event){
 
     modbus_message_t cmd = {
@@ -298,11 +239,11 @@ static void picohal_create_event (picohal_events event){
     };
     enqueue_message(cmd);
 }
-static void spindleSetRPM (float rpm, bool block)
+static void spindleSetRPM (float rpm)
 {
     uint16_t rpm_value = (uint16_t)rpm; // convert float to integer
 
-    modbus_message_t mode_cmd = {
+    modbus_message_t cmd = {
         .context = NULL,
         .crc_check = false,
         .adu[0] = PICOHAL_ADDRESS,
@@ -315,7 +256,7 @@ static void spindleSetRPM (float rpm, bool block)
         .rx_length = 8
     };
 
-    enqueue_message(mode_cmd);
+    enqueue_message(cmd);
 }
 
 static void spindleSetSpeed (spindle_ptrs_t *spindle, float rpm)
@@ -346,8 +287,8 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
     spindle_state.on = state.on;
     spindle_state.ccw = state.ccw;
 
-    if(enqueue_message(mode_cmd))
-        spindleSetRPM(rpm, false);
+    if(enqueue_message(cmd))
+        spindleSetRPM(rpm);
 }
 
 // Returns spindle state in a spindle_state_t variable
@@ -375,9 +316,9 @@ static void picohal_rx_exception (uint8_t code, void *context)
 
     report_message("picohal_rx_exception", Message_Warning);
     sprintf(buf, "CODE: %d", code);
-    report_message(buf, Message_Plain);   
-    sprintf(buf, "CONT: %d", value);
-    report_message(buf, Message_Plain);             
+    // report_message(buf, Message_Plain);   
+    // sprintf(buf, "CONT: %d", value);
+    // report_message(buf, Message_Plain);             
     //if RX exceptions during one of the messages, need to retry?
 }
 
@@ -409,181 +350,12 @@ static void picohal_poll_delay (sys_state_t grbl_state)
     picohal_poll();
 }
 
-// check - check if M-code is handled here.
-static user_mcode_type_t check (user_mcode_t mcode)
-{
-    return ((picohal_mcode_t)mcode == LaserReady_On || (picohal_mcode_t)mcode == LaserReady_Off ||
-            (picohal_mcode_t)mcode == LaserMains_On || (picohal_mcode_t)mcode == LaserError_Reset ||
-            (picohal_mcode_t)mcode == LaserGuide_On || (picohal_mcode_t)mcode == LaserGuide_Off ||
-            (picohal_mcode_t)mcode == LaserShutter_On || (picohal_mcode_t)mcode == LaserShutter_Off ||
-            (picohal_mcode_t)mcode == Argon_On || (picohal_mcode_t)mcode == Argon_Off ||
-            (picohal_mcode_t)mcode == Powder1_On || (picohal_mcode_t)mcode == Powder1_Off ||
-            (picohal_mcode_t)mcode == Powder2_On || (picohal_mcode_t)mcode == Powder2_Off ||
-            (picohal_mcode_t)mcode == PowderSwitch_On || (picohal_mcode_t)mcode == PowderSwitch_Off ||
-            (picohal_mcode_t)mcode == Powder1_FlowRate || (picohal_mcode_t)mcode == Powder2_FlowRate
-            )
-                     ? UserMCode_Normal //  Handled by us. Set to UserMCode_NoValueWords if there are any parameter words (letters) without an accompanying value.
-                     : (user_mcode.check ? user_mcode.check(mcode) : UserMCode_Unsupported);	// If another handler present then call it or return ignore.
-}
-
-// validate - validate parameters
-static status_code_t validate (parser_block_t *gc_block)
-{
-    status_code_t state = Status_OK;
-
-    switch((picohal_mcode_t)gc_block->user_mcode) {
-
-        case LaserReady_On:
-            break;
-        case LaserReady_Off:
-            break;
-        case LaserMains_On:
-            break;
-        case LaserError_Reset:
-            break;
-        case LaserGuide_On:
-            break;
-        case LaserGuide_Off:
-            break;
-        case Argon_On:
-            break;
-        case Argon_Off:
-            break;
-        case Powder1_On:
-            break;
-        case Powder1_Off:
-            break;
-        case Powder2_On:
-            break;
-        case Powder2_Off:
-            break;
-        case PowderSwitch_On:
-            break;
-        case PowderSwitch_Off:
-            break;
-        case Powder1_FlowRate:
-        case Powder2_FlowRate:
-            if(gc_block->words.q && isnan(gc_block->values.q))          // Check if Q parameter value is supplied.
-            state = Status_BadNumberFormat;                             // Return error if not.        
-
-            if(state != Status_BadNumberFormat && gc_block->words.q) {          // Are required parameters provided?
-                if(gc_block->values.q >= 10.0f && gc_block->values.q <= 150.0f) // Yes, is Q parameter value in range (0-150)?
-                    state = Status_OK;                                          // Yes - return ok status.
-                else
-                    state = Status_GcodeValueOutOfRange;                    // No - return error status.
-                gc_block->words.q = Off;                                    // Claim parameters.
-                gc_block->user_mcode_sync = true;                           // Optional: execute command synchronized
-            }
-            break;
-        default:
-            state = Status_Unhandled;
-            break;
-    }
-
-    // If not handled by us and another handler present then call it.
-    return state == Status_Unhandled && user_mcode.validate ? user_mcode.validate(gc_block) : state;
-}
-
-// execute - execute M-code
-static void execute (sys_state_t state, parser_block_t *gc_block)
-{
-    bool handled = true;
-
-    switch((picohal_mcode_t)gc_block->user_mcode) {
-
-        case LaserReady_On:
-            current_IPG_state.ready = 1;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserReady_Off:
-            current_IPG_state.ready = 0;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserMains_On: // Mains is momentary so no need for off command
-            current_IPG_state.mains = 1;
-            picohal_set_IPG_output(current_IPG_state);
-            current_IPG_state.mains = 0;
-            break;
-        case LaserError_Reset: // Reset is momentary so no need for off command
-            current_IPG_state.error_reset = 1;
-            picohal_set_IPG_output(current_IPG_state);
-            current_IPG_state.error_reset = 0;
-            break;
-        // case LaserMains_Off:
-        //     current_IPG_state.mains = 0;
-        //     picohal_set_IPG_output(current_IPG_state);
-        //     break;
-        case LaserGuide_On:
-            current_IPG_state.guide = 1;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserGuide_Off:
-            current_IPG_state.guide = 0;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserShutter_On:
-            current_IPG_state.shutter = 1;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserShutter_Off:
-            current_IPG_state.shutter = 0;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case Argon_On:
-            current_BLC_state.argon = 1;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Argon_Off:
-            current_BLC_state.argon = 0;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Powder1_On:
-            current_BLC_state.powder1 = 1;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Powder1_Off:
-            current_BLC_state.powder1 = 0;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Powder2_On:
-            current_BLC_state.powder2 = 1;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Powder2_Off:
-            current_BLC_state.powder2 = 0;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case PowderSwitch_On:
-            current_BLC_state.powder_switch = 1;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case PowderSwitch_Off:
-            current_BLC_state.powder_switch = 0;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Powder1_FlowRate:
-            current_BLC_flowrate = (current_BLC_flowrate & 0XFF00) | ((uint16_t)gc_block->values.q & 0X00FF);
-            picohal_set_BLC_flowrate(current_BLC_flowrate);
-            break;
-        case Powder2_FlowRate:
-            current_BLC_flowrate = (current_BLC_flowrate & 0X00FF) | ((uint16_t)gc_block->values.q << 8);
-            picohal_set_BLC_flowrate(current_BLC_flowrate);
-            break;
-        default:
-            handled = false;
-            break;
-    }
-
-    if(!handled && user_mcode.execute)          // If not handled by us and another handler present
-        user_mcode.execute(state, gc_block);    // then call it.
-}
-
 static void onReportOptions (bool newopt)
 {
     on_report_options(newopt);
 
     if(!newopt){
-        hal.stream.write("[PLUGIN:PICOHAL v0.2]"  ASCII_EOL);
+        hal.stream.write("[PLUGIN:PICOHAL v0.3]"  ASCII_EOL);
     }
 }
 
@@ -600,7 +372,7 @@ static void onStateChanged (sys_state_t state)
 {
     current_state = state;
     picohal_set_state();
-    if (on_state_change)         // Call previous function in the chain.
+    if (on_state_change)           // Call previous function in the chain.
         on_state_change(state);    
 }
 
@@ -645,12 +417,9 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
 }
 
 // DRIVER RESET
-static void onDriverReset (void)
+static void driverReset (void)
 {
     picohal_set_state();
-    picohal_set_IPG_output((IPG_state_t){0});
-    picohal_set_BLC_flowrate(current_BLC_flowrate);
-    picohal_set_BLC_output((BLC_state_t){0});
     driver_reset();
 }
 
@@ -662,7 +431,7 @@ static bool spindleConfig (spindle_ptrs_t *spindle)
 
 static const spindle_ptrs_t spindle = {
     .type = SpindleType_Stepper, //TODO ADD CUSTOM SPINDLE TYPE
-    .ref_id = SPINDLE_PICOHAL,
+    .ref_id = SPINDLE_MY_SPINDLE,
     .cap = {
         .variable = On,
         .at_speed = Off,
@@ -676,26 +445,355 @@ static const spindle_ptrs_t spindle = {
     .update_rpm = spindleSetSpeed
 };
 
-// Set up HAL pointers for handling additional M-codes.
-// Call this function on driver setup.
-void mcodes_init (void)
-{
-    // Save away current HAL pointers so that we can use them to keep
-    // any chain of M-code handlers intact.
-    memcpy(&user_mcode, &grbl.user_mcode, sizeof(user_mcode_ptrs_t));
+/*** ioports stuff  ***/
 
-    // Redirect HAL pointers to our code.
-    grbl.user_mcode.check = check;
-    grbl.user_mcode.validate = validate;
-    grbl.user_mcode.execute = execute;
+typedef struct {
+    uint16_t addr;
+    xbar_t aux;
+} picohal_aux_t;
+
+static uint16_t a_out[1];
+static uint16_t d_out[1];
+static pin_function_t aux_dout_base = Output_Aux0, aux_aout_base = Output_Analog_Aux0;
+static io_ports_data_t analog;
+static io_ports_data_t digital;
+
+picohal_aux_t aux_dout[] = {
+    {
+        .addr = 0x2101,
+        .aux = {
+            .pin = 0,
+            .port = &d_out[0],
+            .group = PinGroup_AuxOutput,
+            .cap = {
+                .output = On,
+                .claimable = On
+            },
+            .mode = {
+                .output = On,
+                .analog = On
+            }
+        }
+    },
+    {
+        .addr = 0x2101,
+        .aux = {
+            .pin = 1,
+            .port = &d_out[0],
+            .group = PinGroup_AuxOutput,
+            .cap = {
+                .output = On,
+                .claimable = On
+            },
+            .mode = {
+                .output = On,
+                .analog = On
+            }
+        }
+    },
+    {
+        .addr = 0x2101,
+        .aux = {
+            .pin = 2,
+            .port = &d_out[0],
+            .group = PinGroup_AuxOutput,
+            .cap = {
+                .output = On,
+                .claimable = On
+            },
+            .mode = {
+                .output = On,
+                .analog = On
+            }
+        }
+    }
+};
+
+picohal_aux_t aux_aout[] = {
+    {
+        .addr = 0x2100,
+        .aux = {
+            .port = &a_out[0],
+            .group = PinGroup_AuxOutputAnalog,
+            .cap = {
+                .output = On,
+                .analog = On,
+                .claimable = On
+            },
+            .mode = {
+                .output = On,
+                .analog = On
+            }
+        }
+    }
+};
+
+static bool analog_out (uint8_t port, float value)
+{
+    if(port < analog.out.n_ports) {
+
+        //uint16_t *val = (uint16_t *)aux_aout[port].aux.port;
+
+        *val = (uint16_t)value;
+
+        modbus_message_t cmd = {
+            .context = NULL,
+            .crc_check = false,
+            .adu[0] = PICOHAL_ADDRESS,
+            .adu[1] = ModBus_WriteRegister,
+            .adu[2] = (uint8_t)(aux_aout[port].addr >> 8),
+            .adu[3] = (uint8_t)(aux_aout[port].addr & 0xFF),
+            .adu[4] = (uint8_t)(*val >> 8),
+            .adu[5] = (uint8_t)*val,
+            .tx_length = 8,
+            .rx_length = 8
+        };
+
+//        modbus_send(&cmd, &callbacks, false);
+    }
+
+    return true;
 }
 
-void picohal_init (void)
+static void digital_out (uint8_t port, bool on)
 {
-    mcodes_init(); // MCDOES FOR LASER AND POWDER COMMANDS
+    if(port < digital.out.n_ports) {
+
+        //uint16_t *val = (uint16_t *)aux_dout[port].aux.port;
+
+        if(on)
+            *val |= (1 << aux_dout[port].aux.pin);
+        else
+            *val &= ~(1 << aux_dout[port].aux.pin);
+
+        modbus_message_t cmd = {
+            .context = NULL,
+            .crc_check = false,
+            .adu[0] = PICOHAL_ADDRESS,
+            .adu[1] = ModBus_WriteRegister,
+            .adu[2] = (uint8_t)(aux_dout[port].addr >> 8),
+            .adu[3] = (uint8_t)(aux_dout[port].addr & 0xFF),
+            .adu[4] = 0,
+            .adu[5] = (uint8_t)*val,
+            .tx_length = 8,
+            .rx_length = 8
+        };
+
+//        modbus_send(&cmd, &callbacks, false);
+    }
+}
+
+static float analog_out_state (xbar_t *output)
+{
+    float value = -1.0f;
+
+    if(output->id < analog.out.n_ports)
+        value = (float)*(uint16_t *)output->port;
+
+    return value;
+}
+
+static float digital_out_state (xbar_t *output)
+{
+    float value = -1.0f;
+
+    if(output->id < digital.out.n_ports)
+        value = (float)(!!(*(uint16_t *)output->port & (1 << output->pin)));
+
+    return value;
+}
+
+static xbar_t *a_get_pin_info (io_port_direction_t dir, uint8_t port)
+{
+    static xbar_t pin;
+
+    xbar_t *info = NULL;
+
+    if(dir == Port_Input && port < analog.in.n_ports) {
+//...
+        info = &pin;
+    }
+
+    if(dir == Port_Output && port < analog.out.n_ports) {
+        memcpy(&pin, &aux_aout[port].aux, sizeof(xbar_t));
+        pin.get_value = analog_out_state;
+        info = &pin;
+    }
+
+    return info;
+}
+
+static xbar_t *d_get_pin_info (io_port_direction_t dir, uint8_t port)
+{
+    static xbar_t pin;
+
+    xbar_t *info = NULL;
+
+    if(dir == Port_Input && port < digital.in.n_ports) {
+//...
+        info = &pin;
+    }
+
+    if(dir == Port_Output && port < digital.out.n_ports) {
+        memcpy(&pin, &aux_dout[port].aux, sizeof(xbar_t));
+        pin.get_value = digital_out_state;
+//        pin.set_value = digital_out_state;
+        info = &pin;
+    }
+
+    return info;
+}
+
+static void a_set_pin_description (io_port_direction_t dir, uint8_t port, const char *description)
+{
+//    if(dir == Port_Input && port < analog.in.n_ports)
+//        aux_ain[port].description = description;
+
+    if(dir == Port_Output && port < analog.out.n_ports)
+        aux_aout[port].aux.description = description;
+}
+
+static void d_set_pin_description (io_port_direction_t dir, uint8_t port, const char *description)
+{
+//    if(dir == Port_Input && port < digital.in.n_ports)
+//        aux_din[port].description = description;
+
+    if(dir == Port_Output && port < digital.out.n_ports)
+        aux_dout[port].aux.description = description;
+}
+
+static bool a_claim (io_port_direction_t dir, uint8_t port, uint8_t user_port, const char *description)
+{
+    bool ok = false;
+
+/*    if(dir == Port_Input) {
+
+        if((ok = port < analog.in.n_ports && !aux_ain[port].mode.claimed)) {
+            aux_ain[port].mode.claimed = On;
+            aux_ain[port].description = description;
+        }
+
+    } else*/ if((ok = port < analog.out.n_ports && !aux_aout[port].aux.mode.claimed)) {
+
+        aux_aout[port].aux.mode.claimed = On;
+        aux_aout[port].aux.description = description;
+    }
+
+    return ok;
+}
+
+
+static bool d_claim (io_port_direction_t dir, uint8_t port, uint8_t user_port, const char *description)
+{
+    bool ok = false;
+
+/*    if(dir == Port_Input) {
+
+        if((ok = port < digital.in.n_ports && !aux_din[port].mode.claimed)) {
+            aux_din[port].mode.claimed = On;
+            aux_din[port].description = description;
+        }
+
+    } else*/ if((ok = port < digital.out.n_ports && !aux_dout[port].aux.mode.claimed)) {
+
+        aux_dout[port].aux.mode.claimed = On;
+        aux_dout[port].aux.description = description;
+    }
+
+    return ok;
+}
+
+static enumerate_pins_ptr on_enumerate_pins;
+
+static void onEnumeratePins (bool low_level, pin_info_ptr pin_info, void *data)
+{
+    static xbar_t pin = {};
+
+    on_enumerate_pins(low_level, pin_info, data);
+
+    uint_fast8_t idx;
+
+    for(idx = 0; idx < sizeof(aux_dout) / sizeof(picohal_aux_t); idx ++) {
+
+        memcpy(&pin, &aux_dout[idx].aux, sizeof(xbar_t));
+
+        if(!low_level)
+            pin.port = "PicoHAL:";
+
+        pin_info(&pin, data);
+    };
+
+    for(idx = 0; idx < sizeof(aux_aout) / sizeof(picohal_aux_t); idx ++) {
+
+        memcpy(&pin, &aux_aout[idx].aux, sizeof(xbar_t));
+
+        if(!low_level)
+            pin.port = "PicoHAL:";
+
+        pin_info(&pin, data);
+    };
+}
+
+static void get_aux_max (xbar_t *pin, void *data)
+{
+    if(pin->group == PinGroup_AuxOutput)
+        aux_dout_base = max(aux_dout_base, pin->function + 1);
+    else if(pin->group == PinGroup_AuxOutputAnalog)
+        aux_aout_base = max(aux_aout_base, pin->function + 1);
+}
+
+/**********************/
+
+void my_plugin_init (void)
+{
+
+/*** ioports stuff  ***/
+
+    uint_fast8_t idx;
+
+    hal.enumerate_pins(false, get_aux_max, NULL);
+
+    digital.out.n_ports = sizeof(aux_dout) / sizeof(picohal_aux_t);
+
+    for(idx = 0; idx < digital.out.n_ports; idx ++) {
+        aux_dout[idx].aux.id = idx;
+        aux_dout[idx].aux.function = aux_dout_base + idx;
+    }
+
+    io_digital_t dports = {
+        .ports = &digital,
+        .digital_out = digital_out,
+        .claim = d_claim,
+        .get_pin_info = d_get_pin_info,
+        .set_pin_description = d_set_pin_description,
+    };
+
+    ioports_add_digital(&dports);
+
+    analog.out.n_ports = sizeof(aux_aout) / sizeof(picohal_aux_t);
+
+    for(idx = 0; idx < analog.out.n_ports; idx ++) {
+        aux_aout[idx].aux.id = idx;
+        aux_aout[idx].aux.function = aux_aout_base + idx;
+    }
+
+    io_analog_t aports = {
+        .ports = &analog,
+        .analog_out = analog_out,
+        .claim = a_claim,
+        .get_pin_info = a_get_pin_info,
+        .set_pin_description = a_set_pin_description,
+    };
+
+    ioports_add_analog(&aports);
+
+    on_enumerate_pins = hal.enumerate_pins;
+    hal.enumerate_pins = onEnumeratePins;
+
+/**********************/
 
     // INIT PICOHAL SPINDLE IF CONFIGURED
-    #if SPINDLE_ENABLE & (1<<SPINDLE_PICOHAL)
+    #if SPINDLE_ENABLE & (1<<SPINDLE_GENERIC)
 
         if((spindle_id = spindle_register(&spindle, "PicoHAL")) != -1) {
             // spindleSetState(NULL, spindle_state, 0.0f);
@@ -716,7 +814,7 @@ void picohal_init (void)
     on_coolant_changed = hal.coolant.set_state;         //subscribe to coolant events
     hal.coolant.set_state = onCoolantChanged;
 
-    on_realtime_report = grbl.on_realtime_report;       //keepalive
+    on_realtime_report = grbl.on_realtime_report;       //keepalive (IMPLEMENTATION NEEDED)
     grbl.on_realtime_report = picohal_realtime_report;
 
     on_execute_realtime = grbl.on_execute_realtime;
@@ -729,6 +827,6 @@ void picohal_init (void)
     grbl.on_program_completed = onProgramCompleted;     // Checkered Flag for successful end of program lives here
 
     driver_reset = hal.driver_reset;                    // Subscribe to driver reset event
-    hal.driver_reset = onDriverReset;
+    hal.driver_reset = driverReset;
 
 }
