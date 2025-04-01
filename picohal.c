@@ -57,6 +57,7 @@ static const modbus_callbacks_t callbacks = {
 
 //static uint16_t current_BLC_flowrate = (10 | (10 << 8)); //Initialize both powder flow rates to 1.0RPM MOVE TO PICOHAL FW
 
+static coolant_state_t current_coolant_state;
 static sys_state_t current_state; 
 
 typedef struct {
@@ -134,40 +135,17 @@ static void picohal_rx_packet (modbus_message_t *msg)
     
 }
 
-static void picohal_set_state ()
+static void picohal_set_state (sys_state_t state)
 {   
     uint16_t data;
     uint16_t alarm_code;
 
-        switch (current_state){
-        case STATE_ALARM:
-            data = 1;
-            break;
-        case STATE_ESTOP:
-            data = 1;
-            break;            
-        case STATE_CYCLE:
-            data = 2;
-            break;
-        case STATE_HOLD:
-            data = 3;
-            break;
-        case STATE_TOOL_CHANGE:
-            data = 4;
-            break;
-        case STATE_IDLE:
-            data = 5;
-            break;
-        case STATE_HOMING:
-            data = 6;
-            break;   
-        case STATE_JOG:
-            data = 7;
-            break;                                    
-        default :
-            data = 254;
-            break;                                                        
-    }
+    data = ffs(state);
+
+    if(state & (STATE_ESTOP|STATE_ALARM)) {
+        char *alarm;
+
+        data = SystemState_Alarm; // requires latest core
 
     modbus_message_t cmd = {
         .context = NULL,
@@ -263,7 +241,7 @@ static void spindleSetSpeed (spindle_ptrs_t *spindle, float rpm)
 {
     UNUSED(spindle);
 
-    spindleSetRPM(rpm, false);
+    spindleSetRPM(rpm);
 }
 
 // Start or stop spindle
@@ -271,7 +249,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
 {
     UNUSED(spindle);
 
-    modbus_message_t mode_cmd = {
+    modbus_message_t cmd = {
         .context = NULL,
         .crc_check = false,
         .adu[0] = PICOHAL_ADDRESS,
@@ -371,7 +349,7 @@ static void onCoolantChanged (coolant_state_t state){
 static void onStateChanged (sys_state_t state)
 {
     current_state = state;
-    picohal_set_state();
+    picohal_set_state(state);
     if (on_state_change)           // Call previous function in the chain.
         on_state_change(state);    
 }
@@ -419,7 +397,7 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
 // DRIVER RESET
 static void driverReset (void)
 {
-    picohal_set_state();
+    picohal_set_state(current_state);
     driver_reset();
 }
 
@@ -532,7 +510,7 @@ static bool analog_out (uint8_t port, float value)
 {
     if(port < analog.out.n_ports) {
 
-        //uint16_t *val = (uint16_t *)aux_aout[port].aux.port;
+        uint16_t *val = (uint16_t *)aux_aout[port].aux.port; //get current value?
 
         *val = (uint16_t)value;
 
@@ -559,7 +537,7 @@ static void digital_out (uint8_t port, bool on)
 {
     if(port < digital.out.n_ports) {
 
-        //uint16_t *val = (uint16_t *)aux_dout[port].aux.port;
+        uint16_t *val = (uint16_t *)aux_dout[port].aux.port; //get current value?
 
         if(on)
             *val |= (1 << aux_dout[port].aux.pin);
@@ -793,7 +771,7 @@ void my_plugin_init (void)
 /**********************/
 
     // INIT PICOHAL SPINDLE IF CONFIGURED
-    #if SPINDLE_ENABLE & (1<<SPINDLE_GENERIC)
+    #if SPINDLE_ENABLE & (1<<SPINDLE_MY_SPINDLE)
 
         if((spindle_id = spindle_register(&spindle, "PicoHAL")) != -1) {
             // spindleSetState(NULL, spindle_state, 0.0f);
