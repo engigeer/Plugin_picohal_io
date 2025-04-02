@@ -145,7 +145,7 @@ static void picohal_set_state (sys_state_t state)
     data = ffs(state);
 
     if(state & (STATE_ESTOP|STATE_ALARM)) {
-        char *alarm;
+        //char *alarm;
 
         data = SystemState_Alarm; // requires latest core
 
@@ -530,7 +530,7 @@ static bool analog_out (uint8_t port, float value)
             .rx_length = 8
         };
 
-//        modbus_send(&cmd, &callbacks, false);
+        enqueue_message(cmd);
     }
 
     return true;
@@ -560,7 +560,7 @@ static void digital_out (uint8_t port, bool on)
             .rx_length = 8
         };
 
-//        modbus_send(&cmd, &callbacks, false);
+        enqueue_message(cmd);
     }
 }
 
@@ -643,47 +643,6 @@ static void d_set_pin_description (io_port_direction_t dir, uint8_t port, const 
         aux_dout[port].aux.description = description;
 }
 
-static bool a_claim (io_port_direction_t dir, uint8_t port, uint8_t user_port, const char *description)
-{
-    bool ok = false;
-
-/*    if(dir == Port_Input) {
-
-        if((ok = port < analog.in.n_ports && !aux_ain[port].mode.claimed)) {
-            aux_ain[port].mode.claimed = On;
-            aux_ain[port].description = description;
-        }
-
-    } else*/ if((ok = port < analog.out.n_ports && !aux_aout[port].aux.mode.claimed)) {
-
-        aux_aout[port].aux.mode.claimed = On;
-        aux_aout[port].aux.description = description;
-    }
-
-    return ok;
-}
-
-
-static bool d_claim (io_port_direction_t dir, uint8_t port, uint8_t user_port, const char *description)
-{
-    bool ok = false;
-
-/*    if(dir == Port_Input) {
-
-        if((ok = port < digital.in.n_ports && !aux_din[port].mode.claimed)) {
-            aux_din[port].mode.claimed = On;
-            aux_din[port].description = description;
-        }
-
-    } else*/ if((ok = port < digital.out.n_ports && !aux_dout[port].aux.mode.claimed)) {
-
-        aux_dout[port].aux.mode.claimed = On;
-        aux_dout[port].aux.description = description;
-    }
-
-    return ok;
-}
-
 static enumerate_pins_ptr on_enumerate_pins;
 
 static void onEnumeratePins (bool low_level, pin_info_ptr pin_info, void *data)
@@ -744,7 +703,6 @@ void my_plugin_init (void)
     io_digital_t dports = {
         .ports = &digital,
         .digital_out = digital_out,
-        .claim = d_claim,
         .get_pin_info = d_get_pin_info,
         .set_pin_description = d_set_pin_description,
     };
@@ -761,7 +719,6 @@ void my_plugin_init (void)
     io_analog_t aports = {
         .ports = &analog,
         .analog_out = analog_out,
-        .claim = a_claim,
         .get_pin_info = a_get_pin_info,
         .set_pin_description = a_set_pin_description,
     };
@@ -809,5 +766,4 @@ void my_plugin_init (void)
 
     driver_reset = hal.driver_reset;                    // Subscribe to driver reset event
     hal.driver_reset = driverReset;
-
 }
