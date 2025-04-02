@@ -41,9 +41,9 @@
 #define PICOHAL_ADDRESS 10
 #define QUEUE_SIZE 8
 
-#define RETRY_DELAY         250
-#define POLLING_INTERVAL    100
-#define PICOHAL_RETRIES     5
+#define PICOHAL_RETRIES       5
+#define PICOHAL_RETRY_DELAY   250
+#define POLLING_INTERVAL      100
 
 typedef enum {
     TOOLCHANGE_ACK = 0,

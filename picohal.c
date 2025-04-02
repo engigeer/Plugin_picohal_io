@@ -51,6 +51,8 @@ static void picohal_rx_packet (modbus_message_t *msg);
 static void picohal_rx_exception (uint8_t code, void *context);
 
 static const modbus_callbacks_t callbacks = {
+    .retries = PICOHAL_RETRIES,
+    .retry_delay = PICOHAL_RETRY_DELAY,    
     .on_rx_packet = picohal_rx_packet,
     .on_rx_exception = picohal_rx_exception
 };
@@ -147,40 +149,40 @@ static void picohal_set_state (sys_state_t state)
 
         data = SystemState_Alarm; // requires latest core
 
-    modbus_message_t cmd = {
-        .context = NULL,
-        .crc_check = false,
-        .adu[0] = PICOHAL_ADDRESS,
-        .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x00,
-        .adu[3] = 0x01, //status register
-        .adu[4] = data >> 8,
-        .adu[5] = data & 0xFF,
-        .tx_length = 8,
-        .rx_length = 8
-    };
-    enqueue_message(cmd);
-
-    //if in alarm state, write the alarm code to the alarm register.
-    if (data == STATE_ALARM){
-
-        alarm_code = (uint16_t) sys.alarm;
-
-        modbus_message_t code_cmd = {
+        modbus_message_t cmd = {
             .context = NULL,
             .crc_check = false,
             .adu[0] = PICOHAL_ADDRESS,
             .adu[1] = ModBus_WriteRegister,
             .adu[2] = 0x00,
-            .adu[3] = 0x02, //alarm code register.
-            .adu[4] = alarm_code >> 8,
-            .adu[5] = alarm_code & 0xFF,
+            .adu[3] = 0x01, //status register
+            .adu[4] = data >> 8,
+            .adu[5] = data & 0xFF,
             .tx_length = 8,
             .rx_length = 8
         };
-        enqueue_message(code_cmd); 
-    }
+        enqueue_message(cmd);
 
+        //if in alarm state, write the alarm code to the alarm register.
+        if (data == STATE_ALARM){
+
+            alarm_code = (uint16_t) sys.alarm;
+
+            modbus_message_t code_cmd = {
+                .context = NULL,
+                .crc_check = false,
+                .adu[0] = PICOHAL_ADDRESS,
+                .adu[1] = ModBus_WriteRegister,
+                .adu[2] = 0x00,
+                .adu[3] = 0x02, //alarm code register.
+                .adu[4] = alarm_code >> 8,
+                .adu[5] = alarm_code & 0xFF,
+                .tx_length = 8,
+                .rx_length = 8
+            };
+            enqueue_message(code_cmd); 
+        };
+    }
 }
 
 static void picohal_set_coolant ()
@@ -277,23 +279,23 @@ static spindle_state_t spindleGetState (spindle_ptrs_t *spindle)
     return spindle_state;
 }
 
-/* static void raise_alarm (void *data)
+static void raise_alarm (void *data)
 {
     system_raise_alarm(Alarm_Spindle);
-} */
+}
 
 static void picohal_rx_exception (uint8_t code, void *context)
 {
-    // if(sys.cold_start) // is this necessary? Copied from vfd
-    //     protocol_enqueue_foreground_task(raise_alarm, NULL);
-    // else
-    //     system_raise_alarm(Alarm_Spindle);
+    if(sys.cold_start) // is this necessary? Copied from vfd
+        protocol_enqueue_foreground_task(raise_alarm, NULL);
+    else
+        system_raise_alarm(Alarm_Spindle);
 
-    uint8_t value = *((uint8_t*)context);
-    char buf[16];
+    // uint8_t value = *((uint8_t*)context);
+    // char buf[16];
 
-    report_message("picohal_rx_exception", Message_Warning);
-    sprintf(buf, "CODE: %d", code);
+    // report_message("picohal_rx_exception", Message_Warning);
+    // sprintf(buf, "CODE: %d", code);
     // report_message(buf, Message_Plain);   
     // sprintf(buf, "CONT: %d", value);
     // report_message(buf, Message_Plain);             
@@ -309,7 +311,8 @@ static void picohal_poll (void)
     if(ms < last_ms + POLLING_INTERVAL)
         return;    
 
-    //if there is a message try to send it.
+    // stop sending messages if spindle alarm?
+    // if there is a message try to send it.
     if(item_count){
         picohal_send();
         last_ms = ms;
@@ -403,8 +406,8 @@ static void driverReset (void)
 
 static bool spindleConfig (spindle_ptrs_t *spindle)
 {
-    //return modbus_isup();
-    return true;
+    return modbus_isup();
+    //return true;
 }
 
 static const spindle_ptrs_t spindle = {
