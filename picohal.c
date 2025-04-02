@@ -279,18 +279,28 @@ static spindle_state_t spindleGetState (spindle_ptrs_t *spindle)
     return spindle_state;
 }
 
+// Function to flush the queue
+static void flush_queue() {
+    front = 0;
+    rear = -1;
+    item_count = 0;
+}
+
 static void raise_alarm (void *data)
 {
+    flush_queue();
     system_raise_alarm(Alarm_Spindle);
 }
 
 static void picohal_rx_exception (uint8_t code, void *context)
 {
-    if(sys.cold_start) // is this necessary? Copied from vfd
+    if(sys.cold_start){ // is this necessary? Copied from vfd
         protocol_enqueue_foreground_task(raise_alarm, NULL);
-    else
+    }
+    else{
+        flush_queue();
         system_raise_alarm(Alarm_Spindle);
-
+    }
     // uint8_t value = *((uint8_t*)context);
     // char buf[16];
 
@@ -352,7 +362,7 @@ static void onCoolantChanged (coolant_state_t state){
 static void onStateChanged (sys_state_t state)
 {
     current_state = state;
-    picohal_set_state(state);
+    //picohal_set_state(state);
     if (on_state_change)           // Call previous function in the chain.
         on_state_change(state);    
 }
@@ -400,7 +410,8 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
 // DRIVER RESET
 static void driverReset (void)
 {
-    picohal_set_state(current_state);
+    flush_queue();
+    //picohal_set_state(current_state);
     driver_reset();
 }
 
@@ -441,7 +452,7 @@ static io_ports_data_t digital;
 
 picohal_aux_t aux_dout[] = {
     {
-        .addr = 0x2101,
+        .addr = 0x0110,
         .aux = {
             .pin = 0,
             .port = &d_out[0],
@@ -457,7 +468,7 @@ picohal_aux_t aux_dout[] = {
         }
     },
     {
-        .addr = 0x2101,
+        .addr = 0x0110,
         .aux = {
             .pin = 1,
             .port = &d_out[0],
@@ -473,7 +484,7 @@ picohal_aux_t aux_dout[] = {
         }
     },
     {
-        .addr = 0x2101,
+        .addr = 0x0110,
         .aux = {
             .pin = 2,
             .port = &d_out[0],
@@ -492,7 +503,7 @@ picohal_aux_t aux_dout[] = {
 
 picohal_aux_t aux_aout[] = {
     {
-        .addr = 0x2100,
+        .addr = 0x0121,
         .aux = {
             .port = &a_out[0],
             .group = PinGroup_AuxOutputAnalog,
