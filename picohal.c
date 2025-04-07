@@ -288,8 +288,9 @@ static void flush_queue() {
 
 static void raise_alarm (void *data)
 {
+    system_raise_alarm(Alarm_AbortCycle);
+    report_message("PicoHAL comms error, message queue has been cleared.", Message_Warning);
     flush_queue();
-    system_raise_alarm(Alarm_Spindle);
 }
 
 static void picohal_rx_exception (uint8_t code, void *context)
@@ -298,8 +299,9 @@ static void picohal_rx_exception (uint8_t code, void *context)
         protocol_enqueue_foreground_task(raise_alarm, NULL);
     }
     else{
+        system_raise_alarm(Alarm_AbortCycle);
+        report_message("PicoHAL comms error, message queue has been cleared.", Message_Warning);
         flush_queue();
-        system_raise_alarm(Alarm_Spindle);
     }
     // uint8_t value = *((uint8_t*)context);
     // char buf[16];
