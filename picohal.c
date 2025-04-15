@@ -23,6 +23,8 @@
 
 */
 
+#if 0
+
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -630,3 +632,5 @@ void picohal_init (void)
     hal.driver_reset = driverReset;
 
 }
+
+#endif

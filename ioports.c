@@ -25,6 +25,47 @@
 
 #if PICOHAL_IO_ENABLE == 1
 
+static void picohal_rx_packet (modbus_message_t *msg)
+{
+    // DO SOMETHING HERE?
+}
+
+static void raise_alarm (void *data)
+{
+    system_raise_alarm(Alarm_AbortCycle);
+    report_message("PicoHAL communication error.", Message_Warning);
+}
+
+static void picohal_rx_exception (uint8_t code, void *context)
+{
+    sys_state_t state = state_get();
+
+    if(sys.cold_start){ // is this necessary? Copied from vfd
+        protocol_enqueue_foreground_task(raise_alarm, NULL);
+    }
+    else{
+        if(!(state & (STATE_ESTOP|STATE_ALARM))){ //TEMPORARY TO AVOID UNNECESSARY RE-ALARMING?
+            system_raise_alarm(Alarm_AbortCycle);
+            report_message("PicoHAL communication error.", Message_Warning);
+        }
+    }
+}
+
+static void picohal_send_keepalive (void *data){
+
+    modbus_send(&keepalive_msg, &callbacks, false); // should this be non-blocking (I think so yes . . .)
+
+    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+}
+
+static void picohal_send_message_now (modbus_message_t data){
+
+    task_delete(picohal_send_keepalive, NULL);
+    modbus_send(&data, &callbacks, true);
+
+    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+}
+
 static bool analog_out (uint8_t port, float value)
 {
     if(port < analog.out.n_ports) {
@@ -173,7 +214,7 @@ static void onEnumeratePins (bool low_level, pin_info_ptr pin_info, void *data)
         memcpy(&pin, &aux_dout[idx].aux, sizeof(xbar_t));
 
         if(!low_level)
-            pin.port = "PicoHAL:";
+            pin.port = "PicoHAL";
 
         pin_info(&pin, data);
     };
@@ -183,7 +224,7 @@ static void onEnumeratePins (bool low_level, pin_info_ptr pin_info, void *data)
         memcpy(&pin, &aux_aout[idx].aux, sizeof(xbar_t));
 
         if(!low_level)
-            pin.port = "PicoHAL:";
+            pin.port = "PicoHAL2";
 
         pin_info(&pin, data);
     };
@@ -195,43 +236,6 @@ static void get_aux_max (xbar_t *pin, void *data)
         aux_dout_base = max(aux_dout_base, pin->function + 1);
     else if(pin->group == PinGroup_AuxOutputAnalog)
         aux_aout_base = max(aux_aout_base, pin->function + 1);
-}
-
-static void picohal_send_message_now (modbus_message_t data){
-
-    task_delete(picohal_send_keepalive, NULL);
-    modbus_send(&data, &callbacks, true);
-
-    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
-}
-
-static void picohal_send_keepalive (void *data){
-
-    modbus_send(&keepalive_msg, &callbacks, false); // should this be non-blocking
-
-    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
-}
-
-static void picohal_rx_packet (modbus_message_t *msg)
-{
-    
-}
-
-static void raise_alarm (void *data)
-{
-    system_raise_alarm(Alarm_AbortCycle);
-    report_message("PicoHAL communication error.", Message_Warning);
-}
-
-static void picohal_rx_exception (uint8_t code, void *context)
-{
-    if(sys.cold_start){ // is this necessary? Copied from vfd
-        protocol_enqueue_foreground_task(raise_alarm, NULL);
-    }
-    else{
-        system_raise_alarm(Alarm_AbortCycle);
-        report_message("PicoHAL communication error.", Message_Warning);
-    }
 }
 
 static void onReportOptions (bool newopt)
@@ -258,16 +262,16 @@ void picohal_io_init (void) {
     for(idx = 0; idx < digital.out.n_ports; idx ++) {
         aux_dout[idx].addr = PICOHAL_ADDR_DOUT;
         aux_dout[idx].aux.id = idx;
-        aux_dout[idx].pin = idx;
-        aux_dout[idx].port = &picohal_d_out;
+        aux_dout[idx].aux.pin = idx;
+        aux_dout[idx].aux.port = &picohal_d_out;
         aux_dout[idx].aux.function = aux_dout_base + idx;
-        aux_aout[idx].group = PinGroup_AuxOutput;
-        aux_dout[idx].cap.output = On;
-        aux_dout[idx].cap.external = On;
-        aux_dout[idx].cap.async = On;
-        aux_dout[idx].cap.claimable = On;
-        aux_dout[idx].mode.output = On;
-        aux_dout[idx].mode.analog = On;
+        aux_dout[idx].aux.group = PinGroup_AuxOutput;
+        aux_dout[idx].aux.cap.output = On;
+        aux_dout[idx].aux.cap.external = On;
+        aux_dout[idx].aux.cap.async = Off;
+        aux_dout[idx].aux.cap.claimable = On;
+        aux_dout[idx].aux.mode.output = On;
+        aux_dout[idx].aux.mode.analog = On;
 }
 
     io_digital_t dports = {
@@ -282,20 +286,20 @@ void picohal_io_init (void) {
     analog.out.n_ports = sizeof(aux_aout) / sizeof(picohal_aux_t);
 
     for(idx = 0; idx < analog.out.n_ports; idx ++) {
-        aux_dout[idx].addr = PICOHAL_ADDR_AOUT + idx; //NEED TO DOUBLE CHECK IF THIS IS RIGHT
+        aux_aout[idx].addr = PICOHAL_ADDR_AOUT + idx; //NEED TO DOUBLE CHECK IF THIS IS RIGHT
         aux_aout[idx].aux.id = idx; 
-        aux_aout[idx].pin = idx;
-        aux_aout[idx].port = &picohal_a_out[idx]; //NEED TO DOUBLE CHECK IF THIS IS RIGHT
+        aux_aout[idx].aux.pin = idx;
+        aux_aout[idx].aux.port = &picohal_a_out[idx]; //NEED TO DOUBLE CHECK IF THIS IS RIGHT
         aux_aout[idx].aux.function = aux_aout_base + idx;
-        aux_aout[idx].group = PinGroup_AuxOutputAnalog;
-        aux_aout[idx].cap.output = On;
-        aux_aout[idx].cap.analog = On;
-        aux_aout[idx].cap.resolution = Resolution_16bit;
-        aux_aout[idx].cap.external = On;
-        aux_aout[idx].cap.async = On;
-        aux_aout[idx].cap.claimable = On;
-        aux_aout[idx].mode.output = On;
-        aux_aout[idx].mode.analog = On;
+        aux_aout[idx].aux.group = PinGroup_AuxOutputAnalog;
+        aux_aout[idx].aux.cap.output = On;
+        aux_aout[idx].aux.cap.analog = On;
+        aux_aout[idx].aux.cap.resolution = Resolution_16bit;
+        aux_aout[idx].aux.cap.external = On;
+        aux_aout[idx].aux.cap.async = Off;
+        aux_aout[idx].aux.cap.claimable = On;
+        aux_aout[idx].aux.mode.output = On;
+        aux_aout[idx].aux.mode.analog = On;
     }
 
     io_analog_t aports = {
@@ -316,7 +320,7 @@ void picohal_io_init (void) {
     driver_reset = hal.driver_reset;
     hal.driver_reset = OnReset;
 
-    task_add_delayed(picohal_send_keepalive, NULL, PICO_KEEPALIVE_INTERVAL);
+    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
 }
 
 #endif // PICOHAL_IO_ENABLE
