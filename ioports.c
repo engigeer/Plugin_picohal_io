@@ -238,13 +238,13 @@ static void get_aux_max (xbar_t *pin, void *data)
         aux_aout_base = max(aux_aout_base, pin->function + 1);
 }
 
-static void onReportOptions (bool newopt)
-{
-    on_report_options(newopt);
+// static void onReportOptions (bool newopt)
+// {
+//     on_report_options(newopt);
 
-    if(!newopt)
-        report_plugin("PicoHAL IOExpansion", "0.01");
-}
+//     if(!newopt)
+//         report_plugin("PicoHAL IOExpansion", "0.01");
+// }
 
 static void OnReset (void)
 {
@@ -314,11 +314,19 @@ void picohal_io_init (void) {
     on_enumerate_pins = hal.enumerate_pins;
     hal.enumerate_pins = onEnumeratePins;
 
-    on_report_options = grbl.on_report_options;
-    grbl.on_report_options = onReportOptions;
+    // on_report_options = grbl.on_report_options; // ALSO DOESN'T SEEM TO WORK, MAYBE RELATED TO WHEN THE INIT IS CALLED (within IOEXPAND?)
+    // grbl.on_report_options = onReportOptions;
 
     driver_reset = hal.driver_reset;
     hal.driver_reset = OnReset;
+
+    // hmm, doesn't seem to work, not sure why . . . probably because rx exception is void when keepalive is defined . . .
+    // might need to fix this . . . use a variable to store keepalive success? set to true in rx_packet and false in rx_exception . . .
+    // then raise an alarm if this is false, and use this rather than estop state to block future messages . . . (seems promising)
+    // also, maybe okay to send messages as non-blocking if before reset a blocking message is sent to null the outputs? and set
+    // this flag as false so no messages will be sent until the next keepalive is recieved, or could this be problematic . . . 
+    // (i.e., grblHAL thinks states have been updated when in reality they have not . . .)
+    modbus_send(&keepalive_msg, &callbacks, true); // Send as blocking to ensure modbus is up on init?
 
     task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
 }

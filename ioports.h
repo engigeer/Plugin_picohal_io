@@ -85,7 +85,7 @@ typedef struct {
 } picohal_aux_t;
 
 static uint16_t picohal_d_out[1]; // 16 BIT NUMBER IS GOOD FOR UP TO 16 DIGITAL OUTPUTS
-static uint16_t picohal_a_out[2]; // NEEDS TO BE EQUAL TO NUMBER OF ANALOG OUTPUTS?
+static uint16_t picohal_a_out[2]; // NEEDS TO BE EQUAL TO NUMBER OF ANALOG OUTPUTS? (ALSO NEED TO TEST. . .)
 static pin_function_t aux_dout_base = Output_Aux0, aux_aout_base = Output_Analog_Aux0;
 static io_ports_data_t analog;
 static io_ports_data_t digital;
