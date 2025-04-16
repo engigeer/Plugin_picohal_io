@@ -25,9 +25,23 @@
 
 #if PICOHAL_IO_ENABLE == 1
 
+static bool picohal_is_online = false;
+
 static void picohal_rx_packet (modbus_message_t *msg)
 {
-    // DO SOMETHING HERE?
+    if(!(msg->adu[0] & 0x80)) { //WHY?
+
+        switch((picohal_response_t)msg->context) {
+            
+            case PICOHAL_MSG_KEEPALIVE:
+
+                picohal_is_online = true;
+                break;
+
+            default:
+                break;
+        }
+    }
 }
 
 static void raise_alarm (void *data)
@@ -44,26 +58,33 @@ static void picohal_rx_exception (uint8_t code, void *context)
         protocol_enqueue_foreground_task(raise_alarm, NULL);
     }
     else{
-        if(!(state & (STATE_ESTOP|STATE_ALARM))){ //TEMPORARY TO AVOID UNNECESSARY RE-ALARMING?
+        if(picohal_is_online){ //only raise alarm if comms issue is new??
             system_raise_alarm(Alarm_AbortCycle);
             report_message("PicoHAL communication error.", Message_Warning);
+            picohal_is_online = false;
         }
     }
 }
 
 static void picohal_send_keepalive (void *data){
 
-    modbus_send(&keepalive_msg, &callbacks, false); // should this be non-blocking (I think so yes . . .)
+    modbus_send(&keepalive_msg, &callbacks, false); // should this be non-blocking 
 
     task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
 }
 
 static void picohal_send_message_now (modbus_message_t data){
 
-    task_delete(picohal_send_keepalive, NULL);
-    modbus_send(&data, &callbacks, true);
+    if (picohal_is_online) {
+        task_delete(picohal_send_keepalive, NULL);
+        modbus_send(&data, &callbacks, true);
 
-    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+        task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+    }
+    else {
+        system_raise_alarm(Alarm_AbortCycle);
+        report_message("PicoHAL communication error.", Message_Warning);
+    }
 }
 
 static bool analog_out (uint8_t port, float value)
@@ -238,17 +259,45 @@ static void get_aux_max (xbar_t *pin, void *data)
         aux_aout_base = max(aux_aout_base, pin->function + 1);
 }
 
-// static void onReportOptions (bool newopt)
-// {
-//     on_report_options(newopt);
+static void onReportOptions (bool newopt)
+{
+    on_report_options(newopt);
 
-//     if(!newopt)
-//         report_plugin("PicoHAL IOExpansion", "0.01");
-// }
+    if(!newopt)
+        report_plugin("PicoHAL IOExpansion", picohal_is_online ? "0.01" : "0.01 : (not connected)");
+}
 
 static void OnReset (void)
 {
+    //picohal_is_online = true; // necessary to ensure that keepalive will raise new error if comms still down. . .
+    // TODO: SET ALL OUTPUTS TO NULL?
     driver_reset();
+}
+
+static void complete_setup (void *data)
+{
+    // picohal_is_online = true;
+    // might be that there is a better way to do this . . .
+    // if (modbus_send(&keepalive_msg, &callbacks, true)) {
+    //     picohal_is_online = true;
+    // }
+    // else {
+    //     system_raise_alarm(Alarm_AbortCycle);
+    //     report_message("PicoHAL failed to initialize.", Message_Warning);
+    //     picohal_is_online = false;        
+    // }
+
+    on_enumerate_pins = hal.enumerate_pins;
+    hal.enumerate_pins = onEnumeratePins;
+
+    on_report_options = grbl.on_report_options;
+    grbl.on_report_options = onReportOptions;
+
+    driver_reset = hal.driver_reset;
+    hal.driver_reset = OnReset;
+
+    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+
 }
 
 void picohal_io_init (void) {
@@ -311,24 +360,8 @@ void picohal_io_init (void) {
 
     ioports_add_analog(&aports);
 
-    on_enumerate_pins = hal.enumerate_pins;
-    hal.enumerate_pins = onEnumeratePins;
-
-    // on_report_options = grbl.on_report_options; // ALSO DOESN'T SEEM TO WORK, MAYBE RELATED TO WHEN THE INIT IS CALLED (within IOEXPAND?)
-    // grbl.on_report_options = onReportOptions;
-
-    driver_reset = hal.driver_reset;
-    hal.driver_reset = OnReset;
-
-    // hmm, doesn't seem to work, not sure why . . . probably because rx exception is void when keepalive is defined . . .
-    // might need to fix this . . . use a variable to store keepalive success? set to true in rx_packet and false in rx_exception . . .
-    // then raise an alarm if this is false, and use this rather than estop state to block future messages . . . (seems promising)
-    // also, maybe okay to send messages as non-blocking if before reset a blocking message is sent to null the outputs? and set
-    // this flag as false so no messages will be sent until the next keepalive is recieved, or could this be problematic . . . 
-    // (i.e., grblHAL thinks states have been updated when in reality they have not . . .)
-    modbus_send(&keepalive_msg, &callbacks, true); // Send as blocking to ensure modbus is up on init?
-
-    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+    // delay final setup until startup is complete
+    protocol_enqueue_foreground_task(complete_setup, NULL);
 }
 
 #endif // PICOHAL_IO_ENABLE

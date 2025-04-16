@@ -54,6 +54,13 @@ static driver_reset_ptr driver_reset;
 static void picohal_rx_packet (modbus_message_t *msg);
 static void picohal_rx_exception (uint8_t code, void *context);
 
+// static void keepalive_rx_packet (modbus_message_t *msg);
+// static void keepalive_rx_exception (uint8_t code, void *context);
+
+typedef enum {
+    PICOHAL_MSG_KEEPALIVE = 0
+} picohal_response_t;
+
 static const modbus_callbacks_t callbacks = {
     .retries = PICOHAL_RETRIES,
     .retry_delay = PICOHAL_RETRY_DELAY,    
@@ -67,7 +74,7 @@ typedef struct {
 } QueueItem;
 
 modbus_message_t keepalive_msg = {
-    .context = NULL,
+    .context = PICOHAL_MSG_KEEPALIVE,
     .crc_check = false,
     .adu[0] = PICOHAL_ADDRESS,
     .adu[1] = ModBus_WriteRegister,
