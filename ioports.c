@@ -22,6 +22,7 @@
 */
 
 #include "ioports.h"
+#include "stdio.h"
 
 #if PICOHAL_IO_ENABLE == 1
 
@@ -118,6 +119,9 @@ static void digital_out (uint8_t port, bool on)
 {
     if(port < digital.out.n_ports) {
 
+        if(aux_dout[port].aux.mode.inverted)
+            on = !on;
+
         uint16_t *val = (uint16_t *)aux_dout[port].aux.port; //get current value
 
         if(on)
@@ -142,6 +146,27 @@ static void digital_out (uint8_t port, bool on)
     }
 }
 
+static bool digital_out_cfg (xbar_t *output, gpio_out_config_t *config, bool persistent)
+{
+    if(output->id < digital.out.n_ports) {
+        char buf[17];
+        sprintf(buf, "Id:%d | Pin:%d | Inverted:%d", output->id, output->pin, config->inverted);
+        report_message(buf, Message_Info);
+
+        if(config->inverted != aux_dout[output->id].aux.mode.inverted) {
+            aux_dout[output->id].aux.mode.inverted = config->inverted;
+            digital_out(output->pin, (*(uint16_t *)output->port) & (1 << output->pin)); // not quite right . . . needs to handle case of inverted to not-inverted
+        }
+
+        // Open drain not supported
+
+        if(persistent)
+            ioport_save_output_settings(output, config);
+    }
+
+    return output->id < digital.out.n_ports;
+}
+
 static float analog_out_state (xbar_t *output)
 {
     float value = -1.0f;
@@ -160,6 +185,14 @@ static float digital_out_state (xbar_t *output)
         value = (float)(!!(*(uint16_t *)output->port & (1 << output->pin)));
 
     return value;
+}
+
+static bool set_function (xbar_t *output, pin_function_t function)
+{
+    if(output->id < digital.out.n_ports)
+        aux_dout[output->id].aux.function = function;
+
+    return output->id < digital.out.n_ports;
 }
 
 static xbar_t *a_get_pin_info (io_port_direction_t dir, uint8_t port)
@@ -195,6 +228,8 @@ static xbar_t *d_get_pin_info (io_port_direction_t dir, uint8_t port)
     if(dir == Port_Output && port < digital.out.n_ports) {
         memcpy(&pin, &aux_dout[port].aux, sizeof(xbar_t));
         pin.get_value = digital_out_state;
+        pin.set_function = set_function;
+        pin.config = digital_out_cfg;
 //        pin.set_value = digital_out_state;
         info = &pin;
     }
@@ -348,6 +383,7 @@ void picohal_io_init (void) {
         aux_aout[idx].aux.cap.async = Off;
         aux_aout[idx].aux.cap.claimable = On;
         aux_aout[idx].aux.mode.output = On;
+        aux_aout[idx].aux.mode.inverted = Off;
         aux_aout[idx].aux.mode.analog = On;
     }
 
