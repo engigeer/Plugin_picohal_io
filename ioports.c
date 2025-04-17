@@ -152,9 +152,8 @@ static bool digital_out_cfg (xbar_t *output, gpio_out_config_t *config, bool per
 
         if(config->inverted != aux_dout[output->id].aux.mode.inverted) {
             aux_dout[output->id].aux.mode.inverted = config->inverted;
-            digital_out(output->pin, (*(uint16_t *)output->port) & (1 << output->pin)); // not quite right . . . needs to handle case of inverted to not-inverted
+            digital_out(output->pin, (((*(uint16_t *)output->port) >> output->pin) & 1) ^ config->inverted);
         }
-
         // Open drain not supported
 
         if(persistent)
@@ -350,7 +349,7 @@ void picohal_io_init (void) {
         aux_dout[idx].aux.cap.output = On;
         aux_dout[idx].aux.cap.invert = On;
         aux_dout[idx].aux.cap.external = On;
-        aux_dout[idx].aux.cap.async = Off;
+        aux_dout[idx].aux.cap.async = Off; //TODO: make configurable via xbar_config call
         aux_dout[idx].aux.cap.claimable = On;
         aux_dout[idx].aux.mode.output = On;
         aux_dout[idx].aux.mode.analog = On;
