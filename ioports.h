@@ -36,7 +36,7 @@
 #define PICOHAL_KEEPALIVE_INTERVAL    1000
 
 #ifndef PICOHAL_ADDR_KEEPALIVE
-#define PICOHAL_ADDR_KEEPALIVE   0x0120
+#define PICOHAL_ADDR_KEEPALIVE   0x0100
 #endif
 
 #ifndef PICOHAL_ADDR_DOUT
@@ -44,7 +44,7 @@
 #endif
 
 #ifndef PICOHAL_ADDR_AOUT
-#define PICOHAL_ADDR_AOUT        0x0121
+#define PICOHAL_ADDR_AOUT        0x0120
 #endif
 
 static enumerate_pins_ptr on_enumerate_pins;
