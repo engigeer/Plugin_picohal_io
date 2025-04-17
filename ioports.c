@@ -149,9 +149,6 @@ static void digital_out (uint8_t port, bool on)
 static bool digital_out_cfg (xbar_t *output, gpio_out_config_t *config, bool persistent)
 {
     if(output->id < digital.out.n_ports) {
-        char buf[17];
-        sprintf(buf, "Id:%d | Pin:%d | Inverted:%d", output->id, output->pin, config->inverted);
-        report_message(buf, Message_Info);
 
         if(config->inverted != aux_dout[output->id].aux.mode.inverted) {
             aux_dout[output->id].aux.mode.inverted = config->inverted;
@@ -351,6 +348,7 @@ void picohal_io_init (void) {
         aux_dout[idx].aux.function = aux_dout_base + idx;
         aux_dout[idx].aux.group = PinGroup_AuxOutput;
         aux_dout[idx].aux.cap.output = On;
+        aux_dout[idx].aux.cap.invert = On;
         aux_dout[idx].aux.cap.external = On;
         aux_dout[idx].aux.cap.async = Off;
         aux_dout[idx].aux.cap.claimable = On;
