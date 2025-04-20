@@ -30,7 +30,7 @@ static bool picohal_is_online = false;
 
 static void picohal_rx_packet (modbus_message_t *msg)
 {
-    if(!(msg->adu[0] & 0x80)) { //WHY?
+    if(!(msg->adu[0] & 0x80)) {
 
         switch((picohal_response_t)msg->context) {
             
@@ -55,8 +55,8 @@ static void picohal_rx_exception (uint8_t code, void *context)
 {
     sys_state_t state = state_get();
 
-    if(sys.cold_start){ // is this necessary? Copied from vfd
-        protocol_enqueue_foreground_task(raise_alarm, NULL);
+    if(sys.cold_start){
+        task_add_immediate(raise_alarm, NULL);
     }
     else{
         if(picohal_is_online){ //only raise alarm if comms issue is new??
@@ -74,17 +74,12 @@ static void picohal_send_keepalive (void *data){
     task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
 }
 
-static void picohal_send_message_now (modbus_message_t data){
+static void picohal_send_message_now (modbus_message_t *data){
 
-    if (picohal_is_online) {
-        task_delete(picohal_send_keepalive, NULL);
-        modbus_send(&data, &callbacks, true);
-
-        task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
-    }
-    else {
-        system_raise_alarm(Alarm_AbortCycle);
-        report_message("PicoHAL communication error.", Message_Warning);
+    if(!modbus_send(data, &callbacks, true)) {
+        if(state_get() != STATE_IDLE)
+            system_raise_alarm(Alarm_AbortCycle);
+        report_message("PicoHAL communication error.", Message_Warning); // will this cause a double error report? (since an exception also occurs)
     }
 }
 
@@ -109,7 +104,7 @@ static bool analog_out (uint8_t port, float value)
             .rx_length = 8
         };
 
-        picohal_send_message_now(data);
+        picohal_send_message_now(&data);
     }
 
     return true;
@@ -142,7 +137,7 @@ static void digital_out (uint8_t port, bool on)
             .rx_length = 8
         };
 
-        picohal_send_message_now(data);
+        picohal_send_message_now(&data);
     }
 }
 
@@ -317,17 +312,20 @@ static void complete_setup (void *data)
     //     report_message("PicoHAL failed to initialize.", Message_Warning);
     //     picohal_is_online = false;        
     // }
+    if(modbus_isup().rtu) {
+        on_enumerate_pins = hal.enumerate_pins;
+        hal.enumerate_pins = onEnumeratePins;
 
-    on_enumerate_pins = hal.enumerate_pins;
-    hal.enumerate_pins = onEnumeratePins;
+        on_report_options = grbl.on_report_options;
+        grbl.on_report_options = onReportOptions;
 
-    on_report_options = grbl.on_report_options;
-    grbl.on_report_options = onReportOptions;
+        driver_reset = hal.driver_reset;
+        hal.driver_reset = OnReset;
 
-    driver_reset = hal.driver_reset;
-    hal.driver_reset = OnReset;
-
-    task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+        task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
+    } else {
+        task_add_immediate(report_warning, "PICOHAL failed to initialize");
+    }
 
 }
 
@@ -367,17 +365,17 @@ void picohal_io_init (void) {
     analog.out.n_ports = sizeof(aux_aout) / sizeof(picohal_aux_t);
 
     for(idx = 0; idx < analog.out.n_ports; idx ++) {
-        aux_aout[idx].addr = PICOHAL_ADDR_AOUT + idx; //NEED TO DOUBLE CHECK IF THIS IS RIGHT
+        aux_aout[idx].addr = PICOHAL_ADDR_AOUT + idx;
         aux_aout[idx].aux.id = idx; 
         aux_aout[idx].aux.pin = idx;
-        aux_aout[idx].aux.port = &picohal_a_out[idx]; //NEED TO DOUBLE CHECK IF THIS IS RIGHT
+        aux_aout[idx].aux.port = &picohal_a_out[idx];
         aux_aout[idx].aux.function = aux_aout_base + idx;
         aux_aout[idx].aux.group = PinGroup_AuxOutputAnalog;
         aux_aout[idx].aux.cap.output = On;
         aux_aout[idx].aux.cap.analog = On;
         aux_aout[idx].aux.cap.resolution = Resolution_16bit;
         aux_aout[idx].aux.cap.external = On;
-        aux_aout[idx].aux.cap.async = Off;
+        aux_aout[idx].aux.cap.async = On;
         aux_aout[idx].aux.cap.claimable = On;
         aux_aout[idx].aux.mode.output = On;
         aux_aout[idx].aux.mode.inverted = Off;
@@ -394,7 +392,6 @@ void picohal_io_init (void) {
     ioports_add_analog(&aports);
 
     // delay final setup until startup is complete
-    protocol_enqueue_foreground_task(complete_setup, NULL);
-}
+    task_run_on_startup(complete_setup, NULL);}
 
 #endif // PICOHAL_IO_ENABLE
