@@ -23,8 +23,6 @@
 
 */
 
-#if 0
-
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -37,16 +35,12 @@ static on_spindle_selected_ptr on_spindle_selected;
 static on_program_completed_ptr on_program_completed;
 static coolant_set_state_ptr on_coolant_changed; // For real time loop insertion
 static driver_reset_ptr driver_reset;
-static user_mcode_ptrs_t user_mcode;
-static on_execute_realtime_ptr on_execute_realtime, on_execute_delay;
 static on_realtime_report_ptr on_realtime_report;
 
 static spindle_id_t spindle_id;
 static spindle_ptrs_t *spindle_hal = NULL;
 static spindle_data_t spindle_data = {0};
 static spindle_state_t spindle_state = {0};
-
-static uint16_t retry_counter = 0;
 
 static void picohal_rx_packet (modbus_message_t *msg);
 static void picohal_rx_exception (uint8_t code, void *context);
@@ -56,86 +50,35 @@ static const modbus_callbacks_t callbacks = {
     .on_rx_exception = picohal_rx_exception
 };
 
-//important variables for retries
 static coolant_state_t current_coolant_state;
-static IPG_state_t current_IPG_state;
-static BLC_state_t current_BLC_state;
-
 static sys_state_t current_state; 
-
-typedef struct {
-    uint16_t index;
-    modbus_message_t picohal_packet;
-} QueueItem;
-
-QueueItem message_queue[QUEUE_SIZE];
-int front = 0;
-int rear = -1;
-int item_count = 0;
-modbus_message_t current_message;
-modbus_message_t * current_msg_ptr = &current_message;
-uint16_t current_index;
-
-static bool enqueue_message(modbus_message_t data) {
-    static uint16_t message_index;
-    if (item_count == QUEUE_SIZE) {
-        report_message("Warning: PicoHAL queue is full.", Message_Warning);
-        return 0;
-    }
-    rear = (rear + 1) % QUEUE_SIZE;
-    message_queue[rear].picohal_packet = data;
-    message_queue[rear].index = message_index;
-    message_queue[rear].picohal_packet.context = &message_queue[rear].index;
-    message_index++;
-    item_count++;
-        return 1;
-}
-
-static bool dequeue_message() {
-    if (item_count == 0) {
-        //report_message("Error: queue is empty", Message_Info);
-        return 0;
-    }
-    current_message = (message_queue[front].picohal_packet);
-    front = (front + 1) % QUEUE_SIZE;
-    item_count--;
-    return 1;
-}
-
-static bool peek_message() {
-    if (item_count == 0) {
-        return 0;
-    }
-    current_message = (message_queue[front].picohal_packet);
-    //sprintf(buf, "peek_context f: %p",*picohal_packet->context);
-    //sprintf(buf, "peek_context: %d",19535); 
-
-    return 1;
-}
-
-static void picohal_send (){
-
-    uint32_t ms = hal.get_elapsed_ticks();
-
-    //can only send if there is something in the queue.
-    //if (ms<1000)
-    //    return;
-
-    if(peek_message()){
-        modbus_send(current_msg_ptr, &callbacks, false);
-    }
-}
 
 static void picohal_rx_packet (modbus_message_t *msg)
 {
-    //check the context/index and pop it off the queue if it matches.
-    // sprintf(buf, "recv_context:%d current_context: %d",*((uint16_t*)msg->context), *((uint16_t*)current_msg_ptr->context));
-    // report_message(buf, Message_Plain);
-    if(*((uint16_t*)msg->context) == *((uint16_t*)current_msg_ptr->context)){
-        dequeue_message();
-    }
-    //else it should stay on the queue to be re-transmitted.
     
+}
+
+static void raise_alarm (void *data)
+{
+    system_raise_alarm(Alarm_Spindle);
+}
+
+static void picohal_rx_exception (uint8_t code, void *context)
+{
+    // if(sys.cold_start) // is this necessary? Copied from vfd
+    //     protocol_enqueue_foreground_task(raise_alarm, NULL);
+    // else
+    //     system_raise_alarm(Alarm_Spindle);
+
+    // uint8_t value = *((uint8_t*)context);
+    // char buf[16];
+
+    // report_message("picohal_rx_exception", Message_Warning);
+    // sprintf(buf, "CODE: %d", code);
+    // report_message(buf, Message_Plain);   
+    // sprintf(buf, "CONT: %d", value);
+    // report_message(buf, Message_Plain);             
+    //if RX exceptions during one of the messages, need to retry?
 }
 
 static void picohal_set_state ()
@@ -227,42 +170,6 @@ static void picohal_set_coolant ()
     enqueue_message(cmd);
 }
 
-static void picohal_set_IPG_output (IPG_state_t IPG_state)
-{       
-    //set IPG state in register 0x110
-    modbus_message_t cmd = {
-        .context = NULL,
-        .crc_check = false,
-        .adu[0] = PICOHAL_ADDRESS,
-        .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x01,
-        .adu[3] = 0x10,
-        .adu[4] = 0x00,
-        .adu[5] = IPG_state.value & 0xFF,
-        .tx_length = 8,
-        .rx_length = 8
-    };
-    enqueue_message(cmd);
-}
-
-static void picohal_set_BLC_output (BLC_state_t BLC_state)
-{       
-    //set BLC state in register 0x120
-    modbus_message_t cmd = {
-        .context = NULL,
-        .crc_check = false,
-        .adu[0] = PICOHAL_ADDRESS,
-        .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x01,
-        .adu[3] = 0x20,
-        .adu[4] = 0x00,
-        .adu[5] = BLC_state.value & 0xFF,
-        .tx_length = 8,
-        .rx_length = 8
-    };
-    enqueue_message(cmd);
-}
-
 static void picohal_create_event (picohal_events event){
 
     modbus_message_t cmd = {
@@ -294,7 +201,7 @@ static void spindleSetRPM (float rpm, bool block)
         .rx_length = 8
     };
 
-    modbus_send(&mode_cmd, &callbacks, false);
+    //modbus_send(&mode_cmd, &callbacks, false);
 }
 
 static void spindleSetSpeed (spindle_ptrs_t *spindle, float rpm)
@@ -314,7 +221,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
         .crc_check = false,
         .adu[0] = PICOHAL_ADDRESS,
         .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x02,
+        .adu[2] = 0x00,
         .adu[3] = 0x00,
         .adu[4] = 0x00,
         .adu[5] = (!state.on || rpm == 0.0f) ? 0x00 : (state.ccw ? 0x03 : 0x01),
@@ -325,8 +232,8 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
     spindle_state.on = state.on;
     spindle_state.ccw = state.ccw;
 
-    if(modbus_send(&mode_cmd, &callbacks, false))
-        spindleSetRPM(rpm, true);
+    //if(modbus_send(&mode_cmd, &callbacks, false))
+    //    spindleSetRPM(rpm, true);
 }
 
 // Returns spindle state in a spindle_state_t variable
@@ -337,164 +244,19 @@ static spindle_state_t spindleGetState (spindle_ptrs_t *spindle)
     return spindle_state;
 }
 
-static void raise_alarm (void *data)
-{
-    system_raise_alarm(Alarm_Spindle);
-}
-
-static void picohal_rx_exception (uint8_t code, void *context)
-{
-    // if(sys.cold_start) // is this necessary? Copied from vfd
-    //     protocol_enqueue_foreground_task(raise_alarm, NULL);
-    // else
-    //     system_raise_alarm(Alarm_Spindle);
-
-    uint8_t value = *((uint8_t*)context);
-    char buf[16];
-
-    report_message("picohal_rx_exception", Message_Warning);
-    sprintf(buf, "CODE: %d", code);
-    report_message(buf, Message_Plain);   
-    sprintf(buf, "CONT: %d", value);
-    report_message(buf, Message_Plain);             
-    //if RX exceptions during one of the messages, need to retry?
-}
-
-static void picohal_poll (void)
-{
-    static uint32_t last_ms;
-    uint32_t ms = hal.get_elapsed_ticks();
-
-    //control the rate at which the queue is emptied to avoid filling the modbus queue
-    if(ms < last_ms + POLLING_INTERVAL)
-        return;    
-
-    //if there is a message try to send it.
-    if(item_count){
-        picohal_send();
-        last_ms = ms;
-    }
-}
-
-static void picohal_poll_realtime (sys_state_t grbl_state)
-{
-    on_execute_realtime(grbl_state);
-    picohal_poll();
-}
-
-static void picohal_poll_delay (sys_state_t grbl_state)
-{
-    on_execute_delay(grbl_state);
-    picohal_poll();
-}
-
-// check - check if M-code is handled here.
-static user_mcode_type_t check (user_mcode_t mcode)
-{
-    return (mcode == LaserReady_On || mcode == LaserReady_Off ||
-            mcode == LaserMains_On || mcode == LaserMains_Off ||
-            mcode == Argon_On || mcode == Argon_Off ||
-            mcode == Powder1_On || mcode == Powder1_Off
-            )
-                     ? UserMCode_Normal //  Handled by us. Set to UserMCode_NoValueWords if there are any parameter words (letters) without an accompanying value.
-                     : (user_mcode.check ? user_mcode.check(mcode) : UserMCode_Unsupported);	// If another handler present then call it or return ignore.
-}
-
-// validate - validate parameters
-static status_code_t validate (parser_block_t *gc_block)
-{
-    status_code_t state = Status_OK;
-
-    switch(gc_block->user_mcode) {
-
-        case LaserReady_On:
-            break;
-        case LaserReady_Off:
-            break;
-        case LaserMains_On:
-            break;
-        case LaserMains_Off:
-            break;
-        case Argon_On:
-            break;
-        case Argon_Off:
-            break;
-        case Powder1_On:
-            break;
-        case Powder1_Off:
-            break;
-
-        default:
-            state = Status_Unhandled;
-            break;
-    }
-
-    // If not handled by us and another handler present then call it.
-    return state == Status_Unhandled && user_mcode.validate ? user_mcode.validate(gc_block) : state;
-}
-
-// execute - execute M-code
-static void execute (sys_state_t state, parser_block_t *gc_block)
-{
-    bool handled = true;
-
-    switch(gc_block->user_mcode) {
-
-        case LaserReady_On:
-            current_IPG_state.ready = 1;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserReady_Off:
-            current_IPG_state.ready = 0;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserMains_On:
-            current_IPG_state.mains = 1;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case LaserMains_Off:
-            current_IPG_state.mains = 0;
-            picohal_set_IPG_output(current_IPG_state);
-            break;
-        case Argon_On:
-            current_BLC_state.argon = 1;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Argon_Off:
-            current_BLC_state.argon = 0;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Powder1_On:
-            current_BLC_state.powder1 = 1;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-        case Powder1_Off:
-            current_BLC_state.powder1 = 0;
-            picohal_set_BLC_output(current_BLC_state);
-            break;
-
-        default:
-            handled = false;
-            break;
-    }
-
-    if(!handled && user_mcode.execute)          // If not handled by us and another handler present
-        user_mcode.execute(state, gc_block);    // then call it.
-}
-
 static void onReportOptions (bool newopt)
 {
     on_report_options(newopt);
 
     if(!newopt){
-        hal.stream.write("[PLUGIN:PICOHAL v0.2]"  ASCII_EOL);
+        hal.stream.write("[PLUGIN:PICOHAL v0.3]"  ASCII_EOL);
     }
 }
 
 static void onCoolantChanged (coolant_state_t state){
 
-    current_coolant_state = state;
-    picohal_set_coolant();
+    //current_coolant_state = state;
+    //picohal_set_coolant();
 
     if (on_coolant_changed)         // Call previous function in the chain.
         on_coolant_changed(state);    
@@ -502,8 +264,8 @@ static void onCoolantChanged (coolant_state_t state){
 
 static void onStateChanged (sys_state_t state)
 {
-    current_state = state;
-    picohal_set_state();
+    //current_state = state;
+    //picohal_set_state();
     if (on_state_change)         // Call previous function in the chain.
         on_state_change(state);    
 }
@@ -513,7 +275,7 @@ static void onProgramCompleted (program_flow_t program_flow, bool check_mode)
 {
     //write the program flow value to the event register.
     //enqueue(PROGRAM_COMPLETED);
-    picohal_create_event(PROGRAM_COMPLETED);
+    //picohal_create_event(PROGRAM_COMPLETED);
     
     if(on_program_completed)
         on_program_completed(program_flow, check_mode);
@@ -632,5 +394,3 @@ void picohal_init (void)
     hal.driver_reset = driverReset;
 
 }
-
-#endif
