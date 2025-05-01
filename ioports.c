@@ -112,35 +112,40 @@ static bool analog_out (uint8_t port, float value)
     return true;
 }
 
+static void digital_out_ll (xbar_t *output, float value)
+{
+    bool on = value !=0.0f;
+
+    if(aux_dout[output->id].aux.mode.inverted)
+        on = !on;
+
+    uint16_t *val = (uint16_t *)aux_dout[output->id].aux.port; //get current value
+
+    if(on)
+        *val |= (1 << aux_dout[output->id].aux.pin);
+    else
+        *val &= ~(1 << aux_dout[output->id].aux.pin);
+
+    modbus_message_t data = {
+        .context = NULL,
+        .crc_check = false,
+        .adu[0] = PICOHAL_ADDRESS,
+        .adu[1] = ModBus_WriteRegister,
+        .adu[2] = (uint8_t)(aux_dout[output->id].addr >> 8),
+        .adu[3] = (uint8_t)(aux_dout[output->id].addr & 0xFF),
+        .adu[4] = 0,
+        .adu[5] = (uint8_t)*val,
+        .tx_length = 8,
+        .rx_length = 8
+    };
+
+    picohal_send_message_now(&data);
+}
+
 static void digital_out (uint8_t port, bool on)
 {
-    if(port < digital.out.n_ports) {
-
-        if(aux_dout[port].aux.mode.inverted)
-            on = !on;
-
-        uint16_t *val = (uint16_t *)aux_dout[port].aux.port; //get current value
-
-        if(on)
-            *val |= (1 << aux_dout[port].aux.pin);
-        else
-            *val &= ~(1 << aux_dout[port].aux.pin);
-
-        modbus_message_t data = {
-            .context = NULL,
-            .crc_check = false,
-            .adu[0] = PICOHAL_ADDRESS,
-            .adu[1] = ModBus_WriteRegister,
-            .adu[2] = (uint8_t)(aux_dout[port].addr >> 8),
-            .adu[3] = (uint8_t)(aux_dout[port].addr & 0xFF),
-            .adu[4] = 0,
-            .adu[5] = (uint8_t)*val,
-            .tx_length = 8,
-            .rx_length = 8
-        };
-
-        picohal_send_message_now(&data);
-    }
+    if(port < digital.out.n_ports)
+        digital_out_ll(&aux_dout[port].aux, (float)on);
 }
 
 static bool digital_out_cfg (xbar_t *output, gpio_out_config_t *config, bool persistent)
@@ -223,7 +228,7 @@ static xbar_t *d_get_pin_info (io_port_direction_t dir, uint8_t port)
         pin.get_value = digital_out_state;
         pin.set_function = set_function;
         pin.config = digital_out_cfg;
-//        pin.set_value = digital_out_state;
+        pin.set_value = digital_out_ll;
         info = &pin;
     }
 
@@ -351,6 +356,7 @@ void picohal_io_init (void) {
         aux_dout[idx].aux.cap.external = On;
         aux_dout[idx].aux.cap.async = Off; //TODO: make configurable via xbar_config call
         aux_dout[idx].aux.cap.claimable = On;
+        aux_dout[idx].aux.mode.inverted = Off;
         aux_dout[idx].aux.mode.output = On;
         aux_dout[idx].aux.mode.analog = On;
 }
@@ -380,7 +386,6 @@ void picohal_io_init (void) {
         aux_aout[idx].aux.cap.async = On;
         aux_aout[idx].aux.cap.claimable = On;
         aux_aout[idx].aux.mode.output = On;
-        aux_aout[idx].aux.mode.inverted = Off;
         aux_aout[idx].aux.mode.analog = On;
     }
 
