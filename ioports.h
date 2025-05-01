@@ -99,3 +99,5 @@ static io_ports_data_t digital;
 
 static picohal_aux_t aux_dout[8] = {};
 static picohal_aux_t aux_aout[2] = {};
+
+static bool picohal_send_message_now(modbus_message_t *data);

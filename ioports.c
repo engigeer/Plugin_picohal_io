@@ -74,13 +74,15 @@ static void picohal_send_keepalive (void *data){
     task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
 }
 
-static void picohal_send_message_now (modbus_message_t *data){
-
-    if(!modbus_send(data, &callbacks, true)) {
+static bool picohal_send_message_now (modbus_message_t *data){
+    bool okay;
+    
+    if(!(okay = modbus_send(data, &callbacks, true))) {
         if(state_get() != STATE_IDLE)
             system_raise_alarm(Alarm_AbortCycle);
         report_message("PicoHAL communication error.", Message_Warning); // will this cause a double error report? (since an exception also occurs)
     }
+    return okay;
 }
 
 static bool analog_out (uint8_t port, float value)

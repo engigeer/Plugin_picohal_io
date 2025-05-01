@@ -23,11 +23,13 @@
 
 */
 
+#if 0
+
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
 
-#include "picohal.h"
+#include "ioports.h"
 
 static on_state_change_ptr on_state_change;
 static on_report_options_ptr on_report_options;
@@ -128,7 +130,7 @@ static void picohal_set_state ()
         .tx_length = 8,
         .rx_length = 8
     };
-    enqueue_message(cmd);
+    //enqueue_message(cmd);
 
     //if in alarm state, write the alarm code to the alarm register.
     if (data == STATE_ALARM){
@@ -147,7 +149,7 @@ static void picohal_set_state ()
             .tx_length = 8,
             .rx_length = 8
         };
-        enqueue_message(code_cmd); 
+        //enqueue_message(code_cmd); 
     }
 
 }
@@ -167,7 +169,7 @@ static void picohal_set_coolant ()
         .tx_length = 8,
         .rx_length = 8
     };
-    enqueue_message(cmd);
+    //enqueue_message(cmd);
 }
 
 static void picohal_create_event (picohal_events event){
@@ -184,7 +186,7 @@ static void picohal_create_event (picohal_events event){
         .tx_length = 8,
         .rx_length = 8
     };
-    enqueue_message(cmd);
+    //enqueue_message(cmd);
 }
 static void spindleSetRPM (float rpm, bool block)
 {
@@ -201,7 +203,7 @@ static void spindleSetRPM (float rpm, bool block)
         .rx_length = 8
     };
 
-    //modbus_send(&mode_cmd, &callbacks, false);
+    picohal_send_message_now(&mode_cmd);
 }
 
 static void spindleSetSpeed (spindle_ptrs_t *spindle, float rpm)
@@ -323,14 +325,14 @@ static bool spindleConfig (spindle_ptrs_t *spindle)
 }
 
 static const spindle_ptrs_t spindle = {
-    .type = SpindleType_Stepper, //TODO ADD CUSTOM SPINDLE TYPE
+    .type = SpindleType_PWM, //TODO ADD CUSTOM SPINDLE TYPE
     .ref_id = SPINDLE_PICOHAL,
     .cap = {
         .variable = On,
         .at_speed = Off,
         .direction = Off,
         .cmd_controlled = On,
-        .laser = On //TODO: TEST LASER CAPABILITY
+        .laser = On
     },
     .config = spindleConfig,
     .set_state = spindleSetState,
@@ -338,26 +340,13 @@ static const spindle_ptrs_t spindle = {
     .update_rpm = spindleSetSpeed
 };
 
-// Set up HAL pointers for handling additional M-codes.
-// Call this function on driver setup.
-void mcodes_init (void)
-{
-    // Save away current HAL pointers so that we can use them to keep
-    // any chain of M-code handlers intact.
-    memcpy(&user_mcode, &grbl.user_mcode, sizeof(user_mcode_ptrs_t));
-
-    // Redirect HAL pointers to our code.
-    grbl.user_mcode.check = check;
-    grbl.user_mcode.validate = validate;
-    grbl.user_mcode.execute = execute;
-}
 
 void picohal_init (void)
 {
-    mcodes_init(); // MCDOES FOR LASER AND POWDER COMMANDS
+    // mcodes_init(); // CUSTOM PCODES
 
     // INIT PICOHAL SPINDLE IF CONFIGURED
-    #if SPINDLE_ENABLE & (1<<SPINDLE_PICOHAL)
+    #if SPINDLE_ENABLE & (1<<SPINDLE_MY_SPINDLE)
 
         if((spindle_id = spindle_register(&spindle, "PicoHAL")) != -1) {
             // spindleSetState(NULL, spindle_state, 0.0f);
@@ -394,3 +383,5 @@ void picohal_init (void)
     hal.driver_reset = driverReset;
 
 }
+
+#endif

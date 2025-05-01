@@ -1,0 +1,161 @@
+/*
+
+  myspindle.c
+
+  Part of grblHAL
+  
+  Copyright (c) 2025 Mitchell Grams
+
+  Grbl is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Grbl is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+#if PICOHAL_SPINDLE_ENABLE
+
+#include <math.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "ioports.h"
+
+static on_spindle_selected_ptr on_spindle_selected;
+static driver_reset_ptr driver_reset;
+static on_realtime_report_ptr on_realtime_report;
+
+static spindle_id_t spindle_id;
+static spindle_ptrs_t *spindle_hal = NULL;
+static spindle_data_t spindle_data = {0};
+static spindle_state_t spindle_state = {0};
+
+
+static void spindleSetRPM (float rpm, bool block)
+{
+    modbus_message_t data = {
+        .context = NULL,
+        .crc_check = false,
+        .adu[0] = PICOHAL_ADDRESS,
+        .adu[1] = ModBus_WriteRegister,
+        .adu[2] = 0x02,
+        .adu[3] = 0x01,
+        .adu[4] = 0x00,
+        .adu[5] = (rpm == 0.0f) ? 0x00 : 0x01, //NEED TO CONFIGURE USING RPM
+        .tx_length = 8,
+        .rx_length = 8
+    };
+
+    picohal_send_message_now(&data);
+}
+
+static void spindleSetSpeed (spindle_ptrs_t *spindle, float rpm)
+{
+    UNUSED(spindle);
+
+    spindleSetRPM(rpm, false);
+}
+
+// Start or stop spindle
+static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, float rpm)
+{
+    UNUSED(spindle);
+
+    modbus_message_t data = {
+        .context = NULL,
+        .crc_check = false,
+        .adu[0] = PICOHAL_ADDRESS,
+        .adu[1] = ModBus_WriteRegister,
+        .adu[2] = 0x02,
+        .adu[3] = 0x00,
+        .adu[4] = 0x00,
+        .adu[5] = (!state.on || rpm == 0.0f) ? 0x00 : (state.ccw ? 0x03 : 0x01),
+        .tx_length = 8,
+        .rx_length = 8
+    };
+
+    spindle_state.on = state.on;
+    spindle_state.ccw = state.ccw;
+
+    if(picohal_send_message_now(&data))
+        spindleSetRPM(rpm, true);
+}
+
+// Returns spindle state in a spindle_state_t variable
+static spindle_state_t spindleGetState (spindle_ptrs_t *spindle)
+{
+    UNUSED(spindle);
+
+    return spindle_state;
+}
+
+static spindle_data_t *spindleGetData (spindle_data_request_t request)
+{
+    return &spindle_data;
+}
+
+static void onSpindleSelected (spindle_ptrs_t *spindle)
+{
+    if(spindle->id == spindle_id) {
+
+        spindle_hal = spindle;
+        spindle_data.rpm_programmed = -1.0f;
+
+        //modbus_set_silence(NULL);
+
+    } else
+        spindle_hal = NULL;
+
+    if(on_spindle_selected)
+        on_spindle_selected(spindle);
+}
+
+static bool spindleConfig (spindle_ptrs_t *spindle)
+{
+    //return modbus_isup();
+}
+
+static const spindle_ptrs_t spindle = {
+    .type = SpindleType_PWM, //TODO ADD CUSTOM SPINDLE TYPE
+    .ref_id = SPINDLE_PICOHAL,
+    .cap = {
+        .variable = On,
+        .at_speed = Off,
+        .direction = Off,
+        .cmd_controlled = On,
+        .laser = On
+    },
+    .config = spindleConfig,
+    .set_state = spindleSetState,
+    .get_state = spindleGetState,
+    .update_rpm = spindleSetSpeed
+};
+
+
+void picohal_init (void)
+{
+
+    // INIT PICOHAL SPINDLE IF CONFIGURED
+    #if SPINDLE_ENABLE & (1<<SPINDLE_MY_SPINDLE)
+
+        if((spindle_id = spindle_register(&spindle, "PicoHAL")) != -1) {
+            // spindleSetState(NULL, spindle_state, 0.0f);
+
+            on_spindle_selected = grbl.on_spindle_selected;
+            grbl.on_spindle_selected = onSpindleSelected;
+        } else {
+            task_add_immediate(report_warning, "PicoHAL spindle failed to initialize!");
+        }
+    #endif  
+
+}
+
+#endif
