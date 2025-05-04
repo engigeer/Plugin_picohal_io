@@ -21,8 +21,6 @@
 
 */
 
-#if PICOHAL_SPINDLE_ENABLE
-
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -38,18 +36,28 @@ static spindle_ptrs_t *spindle_hal = NULL;
 static spindle_data_t spindle_data = {0};
 static spindle_state_t spindle_state = {0};
 
+#ifndef PICOHAL_ADDR_SP_ENABLE
+#define PICOHAL_ADDR_SP_ENABLE   0x0200
+#endif
+
+#ifndef PICOHAL_ADDR_SP_RPM
+#define PICOHAL_ADDR_SP_RPM      0x0210
+#endif
+
 
 static void spindleSetRPM (float rpm, bool block)
 {
+    uint16_t rpm_value = (uint16_t)rpm; // convert float to integer
+
     modbus_message_t data = {
         .context = NULL,
         .crc_check = false,
         .adu[0] = PICOHAL_ADDRESS,
         .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x02,
-        .adu[3] = 0x01,
-        .adu[4] = 0x00,
-        .adu[5] = (rpm == 0.0f) ? 0x00 : 0x01, //NEED TO CONFIGURE USING RPM
+        .adu[2] = (uint8_t)(PICOHAL_ADDR_SP_RPM >> 8),
+        .adu[3] = (uint8_t)(PICOHAL_ADDR_SP_RPM & 0xFF),
+        .adu[4] = (uint8_t)(rpm_value >> 8), // High byte
+        .adu[5] = (uint8_t)(rpm_value & 0xFF), // Low byte
         .tx_length = 8,
         .rx_length = 8
     };
@@ -74,8 +82,8 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
         .crc_check = false,
         .adu[0] = PICOHAL_ADDRESS,
         .adu[1] = ModBus_WriteRegister,
-        .adu[2] = 0x02,
-        .adu[3] = 0x00,
+        .adu[2] = (uint8_t)(PICOHAL_ADDR_SP_ENABLE >> 8),
+        .adu[3] = (uint8_t)(PICOHAL_ADDR_SP_ENABLE & 0xFF),
         .adu[4] = 0x00,
         .adu[5] = (!state.on || rpm == 0.0f) ? 0x00 : (state.ccw ? 0x03 : 0x01),
         .tx_length = 8,
@@ -125,7 +133,7 @@ static bool spindleConfig (spindle_ptrs_t *spindle)
 
 static const spindle_ptrs_t spindle = {
     .type = SpindleType_PWM, //TODO ADD CUSTOM SPINDLE TYPE
-    .ref_id = SPINDLE_PICOHAL,
+    .ref_id = SPINDLE_MY_SPINDLE,
     .cap = {
         .variable = On,
         .at_speed = Off,
@@ -140,7 +148,7 @@ static const spindle_ptrs_t spindle = {
 };
 
 
-void picohal_init (void)
+void picospindle_init (void)
 {
 
     // INIT PICOHAL SPINDLE IF CONFIGURED
@@ -157,5 +165,3 @@ void picohal_init (void)
     #endif  
 
 }
-
-#endif

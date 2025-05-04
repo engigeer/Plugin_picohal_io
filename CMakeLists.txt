@@ -1,7 +1,7 @@
 add_library(picohal INTERFACE)
 
 target_sources(picohal INTERFACE
- ${CMAKE_CURRENT_LIST_DIR}/picohal.c
+ ${CMAKE_CURRENT_LIST_DIR}/myspindle.c
  ${CMAKE_CURRENT_LIST_DIR}/ioports.c
 )
 
