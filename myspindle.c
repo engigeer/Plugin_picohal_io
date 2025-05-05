@@ -26,6 +26,7 @@
 #include <stdio.h>
 
 #include "ioports.h"
+#include "driver.h"
 
 static on_spindle_selected_ptr on_spindle_selected;
 static driver_reset_ptr driver_reset;
@@ -41,7 +42,7 @@ static spindle_state_t spindle_state = {0};
 #endif
 
 #ifndef PICOHAL_ADDR_SP_RPM
-#define PICOHAL_ADDR_SP_RPM      0x0210
+#define PICOHAL_ADDR_SP_RPM      0x0201
 #endif
 
 

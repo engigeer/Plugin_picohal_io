@@ -389,7 +389,7 @@ void picohal_io_init (void) {
         aux_dout[idx].aux.mode.inverted = Off;
         aux_dout[idx].aux.mode.output = On;
         aux_dout[idx].aux.mode.analog = On;
-}
+    }
 
     io_digital_t dports = {
         .ports = &digital,
@@ -429,6 +429,8 @@ void picohal_io_init (void) {
     ioports_add_analog(&aports);
 
     // delay final setup until startup is complete
-    task_run_on_startup(complete_setup, NULL);}
+    task_run_on_startup(complete_setup, NULL);
+
+}
 
 #endif // PICOHAL_IO_ENABLE
