@@ -116,7 +116,10 @@ bool picohal_send_message_now (modbus_message_t *data){
     if(!(okay = modbus_send(data, &callbacks, true))) {
         if(state_get() != STATE_IDLE)
             system_raise_alarm(Alarm_AbortCycle);
-        report_message("PicoHAL communication error.", Message_Warning); // will this cause a double error report? (since an exception also occurs)
+        report_message("PicoHAL communication error.", Message_Warning);
+        // will this cause a double error report? (since an exception also occurs
+        // ! no because keepalive will have already failed and set picohal_is_online = false)
+        // hmm this may not yet be as desired . . .
     }
     return okay;
 }
