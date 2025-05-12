@@ -23,6 +23,7 @@
 
 #include "ioports.h"
 #include "stdio.h"
+#include "math.h"
 
 #if PICOHAL_IO_ENABLE == 1
 
@@ -54,12 +55,14 @@ modbus_message_t keepalive_msg = {
 };
 
 static uint16_t picohal_d_out[1]; // 16 BIT NUMBER IS GOOD FOR UP TO 16 DIGITAL OUTPUTS
+static uint16_t picohal_d_in[1]; // 16 BIT NUMBER IS GOOD FOR UP TO 16 DIGITAL OUTPUTS
 static uint16_t picohal_a_out[2]; // NEEDS TO BE EQUAL TO NUMBER OF ANALOG OUTPUTS? (ALSO NEED TO TEST. . .)
-static pin_function_t aux_dout_base = Output_Aux0, aux_aout_base = Output_Analog_Aux0;
+static pin_function_t aux_dout_base = Output_Aux0, aux_din_base = Input_Aux0, aux_aout_base = Output_Analog_Aux0;
 static io_ports_data_t analog;
 static io_ports_data_t digital;
 
-static picohal_aux_t aux_dout[16] = {};
+static picohal_aux_t aux_dout[12] = {};
+static picohal_aux_t aux_din[4] = {};
 static picohal_aux_t aux_aout[2] = {};
 
 static bool picohal_is_online = false;
@@ -224,12 +227,124 @@ static float digital_out_state (xbar_t *output)
     return value;
 }
 
-static bool set_function (xbar_t *output, pin_function_t function)
+static bool digital_in (uint8_t port)
 {
-    if(output->id < digital.out.n_ports)
-        aux_dout[output->id].aux.function = function;
+    bool on = false;
 
-    return output->id < digital.out.n_ports;
+    //if(port < digital.in.n_ports)
+
+    return on;
+}
+
+static bool digital_in_cfg (xbar_t *input, gpio_in_config_t *config, bool persistent)
+{
+    if(input->id < digital.in.n_ports) {
+
+        if(config->inverted != aux_din[input->id].aux.mode.inverted) {
+            aux_din[input->id].aux.mode.inverted = config->inverted;
+            //digital_out(output->pin, (((*(uint16_t *)output->port) >> output->pin) & 1) ^ config->inverted);
+        }
+
+        if(persistent)
+            ioport_save_input_settings(input, config);
+    }
+
+    return input->id < digital.in.n_ports;
+}
+
+static float digital_in_state (xbar_t *input)
+{
+    float value = -1.0f;
+
+    if(input->id < digital.in.n_ports)
+        value = (float)(!!(*(uint16_t *)input->port & (1 << input->pin)));
+
+    return value;
+}
+
+inline static __attribute__((always_inline)) int32_t get_input (const xbar_t *input, wait_mode_t wait_mode, float timeout)
+{
+    if(wait_mode == WaitMode_Immediate)
+        return digital_in(input->pin);
+
+    int32_t value = -1;
+    uint_fast16_t delay = (uint_fast16_t)ceilf((1000.0f / 50.0f) * timeout) + 1;
+
+    if(wait_mode == WaitMode_Rise || wait_mode == WaitMode_Fall) {
+
+        pin_irq_mode_t irq_mode = wait_mode == WaitMode_Rise ? IRQ_Mode_Rising : IRQ_Mode_Falling;
+
+        if(input->cap.irq_mode & irq_mode) {
+
+            //event_bits &= ~(1UL << input->pin);
+            //pinEnableIRQ(input, irq_mode);
+
+            // do {
+            //     if(event_bits & (1UL << input->pin)) {
+            //         value = digital_in(input->pin);
+            //         break;
+            //     }
+            //     if(delay) {
+            //         protocol_execute_realtime();
+            //         hal.delay_ms(50, NULL); //DOES THIS NEED TO INCREASE? DONT FORGET TO CHANGE CALC OF DELAY IF SO
+            //     } else
+            //         break;
+            // } while(--delay && !sys.abort);
+
+            //pinEnableIRQ(input, input->mode.irq_mode);    // Restore pin interrupt status
+        }
+
+    } else {
+
+        bool wait_for = wait_mode != WaitMode_Low;
+
+        do {
+            if(digital_in(input->pin) == wait_for) {
+                value = digital_in(input->pin);
+                break;
+            }
+            if(delay) {
+                protocol_execute_realtime();
+                hal.delay_ms(50, NULL); //DOES THIS NEED TO INCREASE? DONT FORGET TO CHANGE CALC OF DELAY IF SO
+            } else
+                break;
+        } while(--delay && !sys.abort);
+    }
+
+    return value;
+}
+
+static int32_t wait_on_input (uint8_t port, wait_mode_t wait_mode, float timeout)
+{
+    int32_t value = -1;
+
+    if(port < digital.in.n_ports)
+        value = get_input(&aux_din[port].aux, wait_mode, timeout);
+
+    return value;
+}
+
+// void ioports_event (input_signal_t *input)
+// {
+//     event_bits |= (1UL << input->pin);
+
+//     if(input->interrupt_callback)
+//         input->interrupt_callback(input->user_port, digital_in(input->pin) ^ input->mode.inverted);
+// }
+
+static bool set_function (xbar_t *port, pin_function_t function)
+{
+    bool ok = false;
+
+    if(port->mode.input & port->id < digital.in.n_ports)
+        aux_din[port->id].aux.function = function;
+        ok = true;
+
+    if(port->mode.output & port->id < digital.out.n_ports)
+        aux_dout[port->id].aux.function = function;
+        ok = true;
+
+    return ok;
 }
 
 static xbar_t *a_get_pin_info (io_port_direction_t dir, uint8_t port)
@@ -258,7 +373,9 @@ static xbar_t *d_get_pin_info (io_port_direction_t dir, uint8_t port)
     xbar_t *info = NULL;
 
     if(dir == Port_Input && port < digital.in.n_ports) {
-//...
+        memcpy(&pin, &aux_din[port].aux, sizeof(xbar_t));
+        pin.get_value = digital_in_state;
+        pin.config = digital_in_cfg;
         info = &pin;
     }
 
@@ -285,8 +402,8 @@ static void a_set_pin_description (io_port_direction_t dir, uint8_t port, const 
 
 static void d_set_pin_description (io_port_direction_t dir, uint8_t port, const char *description)
 {
-//    if(dir == Port_Input && port < digital.in.n_ports)
-//        aux_din[port].description = description;
+   if(dir == Port_Input && port < digital.in.n_ports)
+       aux_din[port].aux.description = description;
 
     if(dir == Port_Output && port < digital.out.n_ports)
         aux_dout[port].aux.description = description;
@@ -307,7 +424,7 @@ static void onEnumeratePins (bool low_level, pin_info_ptr pin_info, void *data)
         memcpy(&pin, &aux_dout[idx].aux, sizeof(xbar_t));
 
         if(!low_level)
-            pin.port = "PicoHAL";
+            pin.port = "PicoHAL_DO";
 
         pin_info(&pin, data);
     };
@@ -317,7 +434,17 @@ static void onEnumeratePins (bool low_level, pin_info_ptr pin_info, void *data)
         memcpy(&pin, &aux_aout[idx].aux, sizeof(xbar_t));
 
         if(!low_level)
-            pin.port = "PicoHAL2";
+            pin.port = "PicoHAL_AO";
+
+        pin_info(&pin, data);
+    };
+
+    for(idx = 0; idx < sizeof(aux_din) / sizeof(picohal_aux_t); idx ++) {
+
+        memcpy(&pin, &aux_din[idx].aux, sizeof(xbar_t));
+
+        if(!low_level)
+            pin.port = "PicoHAL_DI";
 
         pin_info(&pin, data);
     };
@@ -327,6 +454,8 @@ static void get_aux_max (xbar_t *pin, void *data)
 {
     if(pin->group == PinGroup_AuxOutput)
         aux_dout_base = max(aux_dout_base, pin->function + 1);
+    else if(pin->group == PinGroup_AuxInput)
+        aux_din_base = max(aux_din_base, pin->function + 1);        
     else if(pin->group == PinGroup_AuxOutputAnalog)
         aux_aout_base = max(aux_aout_base, pin->function + 1);
 }
@@ -336,7 +465,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("PicoHAL IOExpansion", picohal_is_online ? "0.02" : "0.02 : (not connected)");
+        report_plugin("PicoHAL IOExpansion", picohal_is_online ? "0.03" : "0.03 : (not connected)");
 }
 
 static void OnReset (void)
@@ -375,6 +504,7 @@ void picohal_io_init (void) {
 
     hal.enumerate_pins(false, get_aux_max, NULL);
 
+    digital.in.n_ports = sizeof(aux_din) / sizeof(picohal_aux_t);
     digital.out.n_ports = sizeof(aux_dout) / sizeof(picohal_aux_t);
 
     for(idx = 0; idx < digital.out.n_ports; idx ++) {
@@ -389,15 +519,28 @@ void picohal_io_init (void) {
         aux_dout[idx].aux.cap.external = On;
         aux_dout[idx].aux.cap.async = Off; //TODO: make configurable via xbar_config call
         aux_dout[idx].aux.cap.claimable = On;
-        aux_dout[idx].aux.mode.inverted = Off;
         aux_dout[idx].aux.mode.output = On;
-        aux_dout[idx].aux.mode.analog = On;
+    }
+
+    for(idx = 0; idx < digital.in.n_ports; idx ++) {
+        aux_din[idx].addr = PICOHAL_ADDR_DOUT; //MAYBE WANT TO CHANGE THIS . . .
+        aux_din[idx].aux.id = idx;
+        aux_din[idx].aux.pin = idx;
+        aux_din[idx].aux.port = &picohal_d_in;
+        aux_din[idx].aux.function = aux_din_base + idx;
+        aux_din[idx].aux.group = PinGroup_AuxInput;
+        aux_din[idx].aux.cap.input = On;
+        aux_din[idx].aux.cap.invert = On;
+        aux_din[idx].aux.cap.external = On;
+        aux_din[idx].aux.cap.irq_mode = IRQ_Mode_None;
+        aux_din[idx].aux.mode.input = On;
     }
 
     io_digital_t dports = {
         .ports = &digital,
         .digital_out = digital_out,
         .get_pin_info = d_get_pin_info,
+        .wait_on_input = wait_on_input,
         .set_pin_description = d_set_pin_description,
     };
 
