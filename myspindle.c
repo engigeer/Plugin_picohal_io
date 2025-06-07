@@ -29,8 +29,8 @@
 #include "driver.h"
 
 static on_spindle_selected_ptr on_spindle_selected;
-static driver_reset_ptr driver_reset;
-static on_realtime_report_ptr on_realtime_report;
+// static driver_reset_ptr driver_reset;
+// static on_realtime_report_ptr on_realtime_report;
 
 static spindle_id_t spindle_id;
 static spindle_ptrs_t *spindle_hal = NULL;
@@ -133,7 +133,7 @@ static bool spindleConfig (spindle_ptrs_t *spindle)
 }
 
 static const spindle_ptrs_t spindle = {
-    .type = SpindleType_PWM, //TODO ADD CUSTOM SPINDLE TYPE
+    .type = SpindleType_VFD, //TODO ADD CUSTOM SPINDLE TYPE
     .ref_id = SPINDLE_MY_SPINDLE,
     .cap = {
         .variable = On,
