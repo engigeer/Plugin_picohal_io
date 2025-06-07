@@ -351,7 +351,7 @@ static void complete_setup (void *data)
 
     if(modbus_isup().rtu) {
 
-        picospindle_init();
+        //picospindle_init();
         
         on_enumerate_pins = hal.enumerate_pins;
         hal.enumerate_pins = onEnumeratePins;
@@ -433,6 +433,8 @@ void picohal_io_init (void) {
 
     // delay final setup until startup is complete
     task_run_on_startup(complete_setup, NULL);
+
+    picospindle_init();
 
 }
 
