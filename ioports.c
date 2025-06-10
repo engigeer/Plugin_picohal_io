@@ -53,6 +53,19 @@ modbus_message_t keepalive_msg = {
     .rx_length = 8
 };
 
+    modbus_message_t reset_msg = {
+        .context = NULL,
+        .crc_check = false,
+        .adu[0] = PICOHAL_ADDRESS,
+        .adu[1] = ModBus_WriteRegister,
+        .adu[2] = (uint8_t)(PICOHAL_ADDR_DOUT >> 8),
+        .adu[3] = (uint8_t)(PICOHAL_ADDR_DOUT & 0xFF),
+        .adu[4] = 0,
+        .adu[5] = 0,
+        .tx_length = 8,
+        .rx_length = 8
+    };
+
 static uint16_t picohal_d_out[1]; // 16 BIT NUMBER IS GOOD FOR UP TO 16 DIGITAL OUTPUTS
 static uint16_t picohal_a_out[2]; // NEEDS TO BE EQUAL TO NUMBER OF ANALOG OUTPUTS? (ALSO NEED TO TEST. . .)
 static pin_function_t aux_dout_base = Output_Aux0, aux_aout_base = Output_Analog_Aux0;
@@ -85,11 +98,12 @@ static void raise_alarm (void *data)
 {
     system_raise_alarm(Alarm_AbortCycle);
     report_message("PicoHAL communication error.", Message_Warning);
+    picohal_d_out[0] = 0; // null out all outputs in grblHAL
 }
 
 static void picohal_rx_exception (uint8_t code, void *context)
 {
-    sys_state_t state = state_get();
+    //sys_state_t state = state_get();
 
     if(sys.cold_start){
         task_add_immediate(raise_alarm, NULL);
@@ -98,6 +112,8 @@ static void picohal_rx_exception (uint8_t code, void *context)
         if(picohal_is_online){ //only raise alarm if comms issue is new??
             system_raise_alarm(Alarm_AbortCycle);
             report_message("PicoHAL communication error.", Message_Warning);
+            picohal_d_out[0] = 0; // null out all outputs in grblHAL
+
             picohal_is_online = false;
         }
     }
@@ -117,6 +133,8 @@ bool picohal_send_message_now (modbus_message_t *data){
         if(state_get() != STATE_IDLE)
             system_raise_alarm(Alarm_AbortCycle);
         report_message("PicoHAL communication error.", Message_Warning);
+        picohal_d_out[0] = 0; // null out all outputs in grblHAL
+
         // will this cause a double error report? (since an exception also occurs
         // ! no because keepalive will have already failed and set picohal_is_online = false)
         // hmm this may not yet be as desired . . .
@@ -172,7 +190,7 @@ static void digital_out_ll (xbar_t *output, float value)
         .adu[1] = ModBus_WriteRegister,
         .adu[2] = (uint8_t)(aux_dout[output->id].addr >> 8),
         .adu[3] = (uint8_t)(aux_dout[output->id].addr & 0xFF),
-        .adu[4] = 0,
+        .adu[4] = (uint8_t)(*val >> 8),
         .adu[5] = (uint8_t)*val,
         .tx_length = 8,
         .rx_length = 8
@@ -292,8 +310,6 @@ static void d_set_pin_description (io_port_direction_t dir, uint8_t port, const 
         aux_dout[port].aux.description = description;
 }
 
-static enumerate_pins_ptr on_enumerate_pins;
-
 static void onEnumeratePins (bool low_level, pin_info_ptr pin_info, void *data)
 {
     static xbar_t pin = {};
@@ -341,8 +357,11 @@ static void onReportOptions (bool newopt)
 
 static void OnReset (void)
 {
-    //picohal_is_online = true; // necessary to ensure that keepalive will raise new error if comms still down. . .
-    // TODO: SET ALL OUTPUTS TO NULL?
+    picohal_is_online = true; // necessary to ensure that keepalive will raise new error if comms still down. . .
+
+    picohal_d_out[0] = 0; // null out all outputs in grblHAL
+    picohal_send_message_now(&reset_msg); // null all outputs on picoHAL (if still connected)
+
     driver_reset();
 }
 
