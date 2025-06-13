@@ -95,7 +95,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
     spindle_state.ccw = state.ccw;
 
     if(picohal_send_message_now(&data))
-        spindleSetRPM(rpm, true);
+        spindleSetRPM(rpm, false);
 }
 
 // Returns spindle state in a spindle_state_t variable

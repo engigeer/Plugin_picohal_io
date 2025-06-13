@@ -129,7 +129,7 @@ static void picohal_send_keepalive (void *data){
 bool picohal_send_message_now (modbus_message_t *data){
     bool okay;
     
-    if(!(okay = modbus_send(data, &callbacks, true))) {
+    if(!(okay = modbus_send(data, &callbacks, false))) {
         if(state_get() != STATE_IDLE)
             system_raise_alarm(Alarm_AbortCycle);
         report_message("PicoHAL communication error.", Message_Warning);
