@@ -86,7 +86,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
         .adu[2] = (uint8_t)(PICOHAL_ADDR_SP_ENABLE >> 8),
         .adu[3] = (uint8_t)(PICOHAL_ADDR_SP_ENABLE & 0xFF),
         .adu[4] = 0x00,
-        .adu[5] = (!state.on || rpm == 0.0f) ? 0x00 : (state.ccw ? 0x03 : 0x01),
+        .adu[5] = (!state.on) ? 0x00 : (state.ccw ? 0x03 : 0x01),
         .tx_length = 8,
         .rx_length = 8
     };
