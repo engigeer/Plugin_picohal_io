@@ -63,7 +63,7 @@ static void spindleSetRPM (float rpm, bool block)
         .rx_length = 8
     };
 
-    picohal_send_message_now(&data);
+    picohal_send_message_now(&data, block);
 }
 
 static void spindleSetSpeed (spindle_ptrs_t *spindle, float rpm)
@@ -94,7 +94,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
     spindle_state.on = state.on;
     spindle_state.ccw = state.ccw;
 
-    if(picohal_send_message_now(&data))
+    if(picohal_send_message_now(&data, false))
         spindleSetRPM(rpm, false);
 }
 

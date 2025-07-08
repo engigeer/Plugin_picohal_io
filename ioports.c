@@ -126,14 +126,14 @@ static void picohal_send_keepalive (void *data){
     task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
 }
 
-bool picohal_send_message_now (modbus_message_t *data){
+bool picohal_send_message_now (modbus_message_t *data, bool block){
     bool okay;
     
-    if(!(okay = modbus_send(data, &callbacks, false))) {
+    if(!(okay = modbus_send(data, &callbacks, block))) {
         if(state_get() != STATE_IDLE)
             system_raise_alarm(Alarm_AbortCycle);
         report_message("PicoHAL communication error.", Message_Warning);
-        picohal_d_out[0] = 0; // null out all outputs in grblHAL
+        picohal_d_out[0] = 0; // null out all outputs in grblHAL (is this assuming keepalive is working so picohal outputs will be off . . . ?)
 
         // will this cause a double error report? (since an exception also occurs
         // ! no because keepalive will have already failed and set picohal_is_online = false)
@@ -163,7 +163,7 @@ static bool analog_out (uint8_t port, float value)
             .rx_length = 8
         };
 
-        picohal_send_message_now(&data);
+        picohal_send_message_now(&data, false);
     }
 
     return true;
@@ -196,7 +196,7 @@ static void digital_out_ll (xbar_t *output, float value)
         .rx_length = 8
     };
 
-    picohal_send_message_now(&data);
+    picohal_send_message_now(&data, false);
 }
 
 static void digital_out (uint8_t port, bool on)
@@ -360,7 +360,7 @@ static void OnReset (void)
     picohal_is_online = true; // necessary to ensure that keepalive will raise new error if comms still down. . .
 
     picohal_d_out[0] = 0; // null out all outputs in grblHAL
-    picohal_send_message_now(&reset_msg); // null all outputs on picoHAL (if still connected)
+    picohal_send_message_now(&reset_msg, true); // null all outputs on picoHAL (if still connected)
 
     driver_reset();
 }

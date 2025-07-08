@@ -61,5 +61,5 @@ typedef struct {
     xbar_t aux;
 } picohal_aux_t;
 
-bool picohal_send_message_now(modbus_message_t *data);
+bool picohal_send_message_now(modbus_message_t *data, bool block);
 void picospindle_init(void);
