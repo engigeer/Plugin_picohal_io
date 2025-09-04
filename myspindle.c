@@ -33,7 +33,7 @@ static on_unknown_accessory_override_ptr on_unknown_accessory_override;
 // static driver_reset_ptr driver_reset;
 // static on_realtime_report_ptr on_realtime_report;
 
-#define CMD_OVERRIDE_LASER_BLIP_TOGGLE 0x9F
+#define CMD_OVERRIDE_LASER_TOGGLE 0x9F
 
 static spindle_id_t spindle_id;
 static spindle_ptrs_t *spindle_hal = NULL;
@@ -136,7 +136,7 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
 
 static void onAccessoryOverride (uint8_t cmd)
 {
-    if(cmd == CMD_OVERRIDE_LASER_BLIP_TOGGLE){
+    if(cmd == CMD_OVERRIDE_LASER_TOGGLE & spindle_state.on){
 
         if (toggle_state)
             spindleSetRPM(0, false);
