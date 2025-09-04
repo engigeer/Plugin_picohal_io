@@ -40,7 +40,7 @@ static spindle_ptrs_t *spindle_hal = NULL;
 static spindle_data_t spindle_data = {0};
 static spindle_state_t spindle_state = {0};
 static float saved_rpm;
-static bool toggle_state = 0;
+static bool toggle_state = 1;
 
 #ifndef PICOHAL_ADDR_SP_ENABLE
 #define PICOHAL_ADDR_SP_ENABLE   0x0200
@@ -99,7 +99,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
 
     spindle_state.on = state.on;
     spindle_state.ccw = state.ccw;
-    toggle_state = 0;
+    toggle_state = 1;
 
     if(picohal_send_message_now(&data, false))
         spindleSetRPM(rpm, false);
@@ -136,7 +136,7 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
 
 static void onAccessoryOverride (uint8_t cmd)
 {
-    if(cmd == CMD_OVERRIDE_LASER_TOGGLE & spindle_state.on){
+    if(cmd == CMD_OVERRIDE_LASER_TOGGLE && spindle_state.on){
 
         if (toggle_state)
             spindleSetRPM(0, false);
