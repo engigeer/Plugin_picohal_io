@@ -29,13 +29,18 @@
 #include "driver.h"
 
 static on_spindle_selected_ptr on_spindle_selected;
+static on_unknown_accessory_override_ptr on_unknown_accessory_override;
 // static driver_reset_ptr driver_reset;
 // static on_realtime_report_ptr on_realtime_report;
+
+#define CMD_OVERRIDE_LASER_BLIP_TOGGLE 0x9F
 
 static spindle_id_t spindle_id;
 static spindle_ptrs_t *spindle_hal = NULL;
 static spindle_data_t spindle_data = {0};
 static spindle_state_t spindle_state = {0};
+static float saved_rpm;
+static bool toggle_state = 0;
 
 #ifndef PICOHAL_ADDR_SP_ENABLE
 #define PICOHAL_ADDR_SP_ENABLE   0x0200
@@ -71,6 +76,7 @@ static void spindleSetSpeed (spindle_ptrs_t *spindle, float rpm)
     UNUSED(spindle);
 
     spindleSetRPM(rpm, false);
+    saved_rpm = rpm;
 }
 
 // Start or stop spindle
@@ -93,6 +99,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
 
     spindle_state.on = state.on;
     spindle_state.ccw = state.ccw;
+    toggle_state = 0;
 
     if(picohal_send_message_now(&data, false))
         spindleSetRPM(rpm, false);
@@ -125,6 +132,20 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
 
     if(on_spindle_selected)
         on_spindle_selected(spindle);
+}
+
+static void onAccessoryOverride (uint8_t cmd)
+{
+    if(cmd == CMD_OVERRIDE_LASER_BLIP_TOGGLE){
+
+        if (toggle_state)
+            spindleSetRPM(0, false);
+        else
+            spindleSetRPM(saved_rpm, false);
+        toggle_state = !toggle_state;
+    }
+    else if(on_unknown_accessory_override)
+        on_unknown_accessory_override(cmd);
 }
 
 static bool spindleConfig (spindle_ptrs_t *spindle)
@@ -160,6 +181,9 @@ void picospindle_init (void)
 
             on_spindle_selected = grbl.on_spindle_selected;
             grbl.on_spindle_selected = onSpindleSelected;
+
+            on_unknown_accessory_override = grbl.on_unknown_accessory_override;
+            grbl.on_unknown_accessory_override = onAccessoryOverride;
         } else {
             task_add_immediate(report_warning, "PicoHAL spindle failed to initialize!");
         }

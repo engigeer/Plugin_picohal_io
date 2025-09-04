@@ -352,7 +352,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("PicoHAL IOExpansion", picohal_is_online ? "0.02" : "0.02 : (not connected)");
+        report_plugin("PicoHAL IOExpansion", picohal_is_online ? "0.03" : "0.03 : (not connected)");
 }
 
 static void OnReset (void)
