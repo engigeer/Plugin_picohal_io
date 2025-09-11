@@ -29,7 +29,7 @@
 #include "driver.h"
 
 static on_spindle_selected_ptr on_spindle_selected;
-static on_unknown_accessory_override_ptr on_unknown_accessory_override;
+static on_unknown_realtime_cmd_ptr on_unknown_realtime_cmd;
 // static driver_reset_ptr driver_reset;
 // static on_realtime_report_ptr on_realtime_report;
 
@@ -113,10 +113,10 @@ static spindle_state_t spindleGetState (spindle_ptrs_t *spindle)
     return spindle_state;
 }
 
-static spindle_data_t *spindleGetData (spindle_data_request_t request)
-{
-    return &spindle_data;
-}
+// static spindle_data_t *spindleGetData (spindle_data_request_t request)
+// {
+//     return &spindle_data;
+// }
 
 static void onSpindleSelected (spindle_ptrs_t *spindle)
 {
@@ -134,23 +134,24 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
         on_spindle_selected(spindle);
 }
 
-static void onAccessoryOverride (uint8_t cmd)
+static bool onUnknownRealtimeCmd (char c)
 {
-    if(cmd == CMD_OVERRIDE_LASER_TOGGLE && spindle_state.on){
+    if(c == CMD_OVERRIDE_LASER_TOGGLE && spindle_state.on){
 
         if (toggle_state)
             spindleSetRPM(0, false);
         else
             spindleSetRPM(saved_rpm, false);
         toggle_state = !toggle_state;
+        return true;
     }
-    else if(on_unknown_accessory_override)
-        on_unknown_accessory_override(cmd);
+    else
+        return on_unknown_realtime_cmd == NULL || on_unknown_realtime_cmd(c);
 }
 
 static bool spindleConfig (spindle_ptrs_t *spindle)
 {
-    //return modbus_isup();
+    return modbus_isup().rtu;
 }
 
 static const spindle_ptrs_t spindle = {
@@ -182,8 +183,8 @@ void picospindle_init (void)
             on_spindle_selected = grbl.on_spindle_selected;
             grbl.on_spindle_selected = onSpindleSelected;
 
-            on_unknown_accessory_override = grbl.on_unknown_accessory_override;
-            grbl.on_unknown_accessory_override = onAccessoryOverride;
+            on_unknown_realtime_cmd = grbl.on_unknown_realtime_cmd;
+            grbl.on_unknown_realtime_cmd = onUnknownRealtimeCmd;
         } else {
             task_add_immediate(report_warning, "PicoHAL spindle failed to initialize!");
         }
