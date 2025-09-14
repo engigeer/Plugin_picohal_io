@@ -34,8 +34,6 @@ static on_keypress_preview_ptr on_keypress_preview;
 // static driver_reset_ptr driver_reset;
 // static on_realtime_report_ptr on_realtime_report;
 
-#define CMD_OVERRIDE_LASER_TOGGLE 0x9F
-
 static spindle_id_t spindle_id;
 static spindle_ptrs_t *spindle_hal = NULL;
 static spindle_data_t spindle_data = {0};
@@ -137,7 +135,8 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
 
 static bool keypress_preview (char c, uint_fast16_t state)
 {
-    if(c == CMD_OVERRIDE_LASER_TOGGLE && spindle_state.on){
+    // OVERRIDES DEFAULT SPINDLE STOP BEHAVIOUR (ONLY FOR COMMANDS FROM KEYPAD)
+    if(c == CMD_OVERRIDE_SPINDLE_STOP && spindle_state.on){
 
         if (toggle_state)
             spindleSetRPM(0, false);
