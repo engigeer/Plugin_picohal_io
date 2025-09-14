@@ -27,9 +27,10 @@
 
 #include "ioports.h"
 #include "driver.h"
+#include "keypad.h"
 
 static on_spindle_selected_ptr on_spindle_selected;
-static on_unknown_realtime_cmd_ptr on_unknown_realtime_cmd;
+static on_keypress_preview_ptr on_keypress_preview;
 // static driver_reset_ptr driver_reset;
 // static on_realtime_report_ptr on_realtime_report;
 
@@ -134,7 +135,7 @@ static void onSpindleSelected (spindle_ptrs_t *spindle)
         on_spindle_selected(spindle);
 }
 
-static bool onUnknownRealtimeCmd (char c)
+static bool keypress_preview (char c, uint_fast16_t state)
 {
     if(c == CMD_OVERRIDE_LASER_TOGGLE && spindle_state.on){
 
@@ -146,7 +147,7 @@ static bool onUnknownRealtimeCmd (char c)
         return true;
     }
     else
-        return on_unknown_realtime_cmd == NULL || on_unknown_realtime_cmd(c);
+        return on_keypress_preview && on_keypress_preview(c, state);
 }
 
 static bool spindleConfig (spindle_ptrs_t *spindle)
@@ -183,8 +184,8 @@ void picospindle_init (void)
             on_spindle_selected = grbl.on_spindle_selected;
             grbl.on_spindle_selected = onSpindleSelected;
 
-            on_unknown_realtime_cmd = grbl.on_unknown_realtime_cmd;
-            grbl.on_unknown_realtime_cmd = onUnknownRealtimeCmd;
+            on_keypress_preview = keypad.on_keypress_preview;
+            keypad.on_keypress_preview = keypress_preview;
         } else {
             task_add_immediate(report_warning, "PicoHAL spindle failed to initialize!");
         }
