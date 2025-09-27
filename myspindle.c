@@ -31,7 +31,7 @@
 
 static on_spindle_selected_ptr on_spindle_selected;
 static on_keypress_preview_ptr on_keypress_preview;
-// static driver_reset_ptr driver_reset;
+static driver_reset_ptr driver_reset;
 // static on_realtime_report_ptr on_realtime_report;
 
 static spindle_id_t spindle_id;
@@ -53,6 +53,9 @@ static bool toggle_state = 1;
 static void spindleSetRPM (float rpm, bool block)
 {
     uint16_t rpm_value = (uint16_t)rpm; // convert float to integer
+
+    if (!toggle_state)
+        rpm = 0;
 
     modbus_message_t data = {
         .context = NULL,
@@ -137,12 +140,13 @@ static bool keypress_preview (char c, uint_fast16_t state)
 {
     // OVERRIDES DEFAULT SPINDLE STOP BEHAVIOUR (ONLY FOR COMMANDS FROM KEYPAD)
     if(c == CMD_OVERRIDE_SPINDLE_STOP && spindle_state.on){
+        
+        toggle_state = !toggle_state;
 
         if (toggle_state)
-            spindleSetRPM(0, false);
-        else
             spindleSetRPM(saved_rpm, false);
-        toggle_state = !toggle_state;
+        else
+            spindleSetRPM(0, false);
         return true;
     }
     else
@@ -170,6 +174,14 @@ static const spindle_ptrs_t spindle = {
     .update_rpm = spindleSetSpeed
 };
 
+static void OnReset (void)
+{
+    // Ensure spindle is off on RESET (TODO: also set power to zero?, also is this correct? how does it interact with iosender . . .)
+    spindle_all_off();
+
+    driver_reset();
+}
+
 
 void picospindle_init (void)
 {
@@ -185,6 +197,10 @@ void picospindle_init (void)
 
             on_keypress_preview = keypad.on_keypress_preview;
             keypad.on_keypress_preview = keypress_preview;
+
+            driver_reset = hal.driver_reset;
+            hal.driver_reset = OnReset;
+
         } else {
             task_add_immediate(report_warning, "PicoHAL spindle failed to initialize!");
         }
