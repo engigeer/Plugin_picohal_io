@@ -26,6 +26,14 @@
 
 #if PICOHAL_IO_ENABLE == 1
 
+#ifndef PICOHAL_PORTS
+    PICOHAL_PORTS = 8;
+#endif
+
+#if PICOHAL_PORTS > 8
+    PICOHAL_PORTS = 8;
+#endif
+
 static enumerate_pins_ptr on_enumerate_pins;
 static on_report_options_ptr on_report_options;
 static driver_reset_ptr driver_reset;
@@ -72,7 +80,7 @@ static pin_function_t aux_dout_base = Output_Aux0, aux_aout_base = Output_Analog
 static io_ports_data_t analog;
 static io_ports_data_t digital;
 
-static picohal_aux_t aux_dout[8] = {};
+static picohal_aux_t aux_dout[PICOHAL_PORTS] = {};
 static picohal_aux_t aux_aout[2] = {};
 
 static bool picohal_is_online = false;
