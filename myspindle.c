@@ -195,9 +195,11 @@ void picospindle_init (void)
             on_spindle_selected = grbl.on_spindle_selected;
             grbl.on_spindle_selected = onSpindleSelected;
 
-            on_keypress_preview = keypad.on_keypress_preview;
-            keypad.on_keypress_preview = keypress_preview;
-
+            #if KEYPAD_ENABLE
+                on_keypress_preview = keypad.on_keypress_preview;
+                keypad.on_keypress_preview = keypress_preview;
+            #endif
+            
             driver_reset = hal.driver_reset;
             hal.driver_reset = OnReset;
 
