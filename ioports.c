@@ -371,8 +371,8 @@ static void OnReset (void)
 {
     picohal_is_online = true; // necessary to ensure that keepalive will raise new error if comms still down. . .
 
-    picohal_d_out[0] = 0; // null out all outputs in grblHAL
-    picohal_send_message_now(&reset_msg, true); // null all outputs on picoHAL (if still connected)
+    //picohal_d_out[0] = 0; // null out all outputs in grblHAL
+    //picohal_send_message_now(&reset_msg, true); // null all outputs on picoHAL (if still connected)
 
     driver_reset();
 }
