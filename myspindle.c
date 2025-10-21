@@ -26,8 +26,9 @@
 #include <stdio.h>
 
 #include "ioports.h"
-#include "driver.h"
 #include "keypad.h"
+
+#include "grbl/task.h"
 
 static on_spindle_selected_ptr on_spindle_selected;
 static on_keypress_preview_ptr on_keypress_preview;

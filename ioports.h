@@ -21,11 +21,11 @@
   along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "grbl/hal.h"
+#pragma once
+
+#include "driver.h"
+
 #include "grbl/modbus.h"
-#include "grbl/protocol.h"
-#include "grbl/state_machine.h"
-#include "grbl/task.h"
 
 #ifndef PICOHAL_ADDRESS
 #define PICOHAL_ADDRESS               10

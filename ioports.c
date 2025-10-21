@@ -20,9 +20,13 @@
   You should have received a copy of the GNU General Public License
   along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
+#include <stdio.h>
 
 #include "ioports.h"
-#include "stdio.h"
+
+#include "grbl/protocol.h"
+#include "grbl/state_machine.h"
+#include "grbl/task.h"
 
 #if PICOHAL_IO_ENABLE == 1
 
