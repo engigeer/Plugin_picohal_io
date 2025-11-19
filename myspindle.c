@@ -3,7 +3,8 @@
   myspindle.c
 
   Part of grblHAL
-  
+
+  Copyright (c) 2025 Terje Io
   Copyright (c) 2025 Mitchell Grams
 
   Grbl is free software: you can redistribute it and/or modify
@@ -25,7 +26,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "ioports.h"
+#include "picohal.h"
 #include "keypad.h"
 
 #include "grbl/task.h"
@@ -33,7 +34,6 @@
 static on_spindle_selected_ptr on_spindle_selected;
 static on_keypress_preview_ptr on_keypress_preview;
 static driver_reset_ptr driver_reset;
-// static on_realtime_report_ptr on_realtime_report;
 
 static spindle_id_t spindle_id;
 static spindle_ptrs_t *spindle_hal = NULL;
@@ -42,14 +42,13 @@ static spindle_state_t spindle_state = {0};
 static float saved_rpm;
 static bool toggle_state = 1;
 
-#ifndef PICOHAL_ADDR_SP_ENABLE
-#define PICOHAL_ADDR_SP_ENABLE   0x0200
+#ifndef PICOHAL_REG_SP_ENABLE
+#define PICOHAL_REG_SP_ENABLE   0x0200
 #endif
 
-#ifndef PICOHAL_ADDR_SP_RPM
-#define PICOHAL_ADDR_SP_RPM      0x0201
+#ifndef PICOHAL_REG_SP_RPM
+#define PICOHAL_REG_SP_RPM      0x0201
 #endif
-
 
 static void spindleSetRPM (float rpm, bool block)
 {
@@ -63,8 +62,8 @@ static void spindleSetRPM (float rpm, bool block)
         .crc_check = false,
         .adu[0] = PICOHAL_ADDRESS,
         .adu[1] = ModBus_WriteRegister,
-        .adu[2] = (uint8_t)(PICOHAL_ADDR_SP_RPM >> 8),
-        .adu[3] = (uint8_t)(PICOHAL_ADDR_SP_RPM & 0xFF),
+        .adu[2] = (uint8_t)(PICOHAL_REG_SP_RPM >> 8),
+        .adu[3] = (uint8_t)(PICOHAL_REG_SP_RPM & 0xFF),
         .adu[4] = (uint8_t)(rpm_value >> 8), // High byte
         .adu[5] = (uint8_t)(rpm_value & 0xFF), // Low byte
         .tx_length = 8,
@@ -92,8 +91,8 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
         .crc_check = false,
         .adu[0] = PICOHAL_ADDRESS,
         .adu[1] = ModBus_WriteRegister,
-        .adu[2] = (uint8_t)(PICOHAL_ADDR_SP_ENABLE >> 8),
-        .adu[3] = (uint8_t)(PICOHAL_ADDR_SP_ENABLE & 0xFF),
+        .adu[2] = (uint8_t)(PICOHAL_REG_SP_ENABLE >> 8),
+        .adu[3] = (uint8_t)(PICOHAL_REG_SP_ENABLE & 0xFF),
         .adu[4] = 0x00,
         .adu[5] = (!state.on) ? 0x00 : (state.ccw ? 0x03 : 0x01),
         .tx_length = 8,
@@ -183,10 +182,8 @@ static void OnReset (void)
     driver_reset();
 }
 
-
-void picospindle_init (void)
+void picohal_spindle_init (void)
 {
-
     // INIT PICOHAL SPINDLE IF CONFIGURED
     #if SPINDLE_ENABLE & (1<<SPINDLE_MY_SPINDLE)
 

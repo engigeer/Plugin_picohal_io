@@ -1,5 +1,5 @@
 /*
-  ioports.c - connect to picoHAL (RP2040) ioexpander via modbus RTU
+  picohal.c - modbus RTU connected ioexpander
 
   Part of grblHAL
 
@@ -22,7 +22,7 @@
 */
 #include <stdio.h>
 
-#include "ioports.h"
+#include "picohal.h"
 
 #include "grbl/protocol.h"
 #include "grbl/state_machine.h"
@@ -42,42 +42,6 @@ static enumerate_pins_ptr on_enumerate_pins;
 static on_report_options_ptr on_report_options;
 static driver_reset_ptr driver_reset;
 
-static void picohal_rx_packet (modbus_message_t *msg);
-static void picohal_rx_exception (uint8_t code, void *context);
-
-static const modbus_callbacks_t callbacks = {
-    .retries = PICOHAL_RETRIES,
-    .retry_delay = PICOHAL_RETRY_DELAY,    
-    .on_rx_packet = picohal_rx_packet,
-    .on_rx_exception = picohal_rx_exception
-};
-
-modbus_message_t keepalive_msg = {
-    .context = PICOHAL_MSG_KEEPALIVE,
-    .crc_check = false,
-    .adu[0] = PICOHAL_ADDRESS,
-    .adu[1] = ModBus_WriteRegister,
-    .adu[2] = (uint8_t)(PICOHAL_ADDR_KEEPALIVE >> 8),
-    .adu[3] = (uint8_t)(PICOHAL_ADDR_KEEPALIVE & 0xFF),
-    .adu[4] = 0,
-    .adu[5] = 0x01,
-    .tx_length = 8,
-    .rx_length = 8
-};
-
-    modbus_message_t reset_msg = {
-        .context = NULL,
-        .crc_check = false,
-        .adu[0] = PICOHAL_ADDRESS,
-        .adu[1] = ModBus_WriteRegister,
-        .adu[2] = (uint8_t)(PICOHAL_ADDR_DOUT >> 8),
-        .adu[3] = (uint8_t)(PICOHAL_ADDR_DOUT & 0xFF),
-        .adu[4] = 0,
-        .adu[5] = 0,
-        .tx_length = 8,
-        .rx_length = 8
-    };
-
 static uint16_t picohal_d_out[1]; // 16 BIT NUMBER IS GOOD FOR UP TO 16 DIGITAL OUTPUTS
 static uint16_t picohal_a_out[2]; // NEEDS TO BE EQUAL TO NUMBER OF ANALOG OUTPUTS? (ALSO NEED TO TEST. . .)
 static pin_function_t aux_dout_base = Output_Aux0, aux_aout_base = Output_Analog_Aux0;
@@ -86,8 +50,6 @@ static io_ports_data_t digital;
 
 static picohal_aux_t aux_dout[PICOHAL_PORTS] = {};
 static picohal_aux_t aux_aout[2] = {};
-
-static bool picohal_is_online = false;
 
 static void picohal_rx_packet (modbus_message_t *msg)
 {
@@ -115,8 +77,6 @@ static void raise_alarm (void *data)
 
 static void picohal_rx_exception (uint8_t code, void *context)
 {
-    //sys_state_t state = state_get();
-
     if(sys.cold_start){
         task_add_immediate(raise_alarm, NULL);
     }
@@ -364,15 +324,12 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("PicoHAL IOExpansion", picohal_is_online ? "0.03" : "0.03 : (not connected)");
+        report_plugin("PicoHAL IOExpansion", picohal_is_online ? "0.04" : "0.04 : (not connected)");
 }
 
 static void OnReset (void)
 {
     picohal_is_online = true; // necessary to ensure that keepalive will raise new error if comms still down. . .
-
-    //picohal_d_out[0] = 0; // null out all outputs in grblHAL
-    //picohal_send_message_now(&reset_msg, true); // null all outputs on picoHAL (if still connected)
 
     driver_reset();
 }
@@ -381,8 +338,6 @@ static void complete_setup (void *data)
 {
 
     if(modbus_isup().rtu) {
-
-        //picospindle_init();
         
         on_enumerate_pins = hal.enumerate_pins;
         hal.enumerate_pins = onEnumeratePins;
@@ -392,6 +347,13 @@ static void complete_setup (void *data)
 
         driver_reset = hal.driver_reset;
         hal.driver_reset = OnReset;
+
+        // initialize picohal event handlers
+        picohal_events_init();
+
+        // TODO: disable picohal spindle here if modbus connection fails??
+
+        picohal_is_online = false; //init to false until first keepalive recieved
 
         task_add_delayed(picohal_send_keepalive, NULL, PICOHAL_KEEPALIVE_INTERVAL);
     } else {
@@ -409,7 +371,7 @@ void picohal_io_init (void) {
     digital.out.n_ports = sizeof(aux_dout) / sizeof(picohal_aux_t);
 
     for(idx = 0; idx < digital.out.n_ports; idx ++) {
-        aux_dout[idx].addr = PICOHAL_ADDR_DOUT;
+        aux_dout[idx].addr = PICOHAL_REG_DOUT;
         aux_dout[idx].aux.id = idx;
         aux_dout[idx].aux.pin = idx;
         aux_dout[idx].aux.port = &picohal_d_out;
@@ -437,7 +399,7 @@ void picohal_io_init (void) {
     analog.out.n_ports = sizeof(aux_aout) / sizeof(picohal_aux_t);
 
     for(idx = 0; idx < analog.out.n_ports; idx ++) {
-        aux_aout[idx].addr = PICOHAL_ADDR_AOUT + idx;
+        aux_aout[idx].addr = PICOHAL_REG_AOUT + idx;
         aux_aout[idx].aux.id = idx; 
         aux_aout[idx].aux.pin = idx;
         aux_aout[idx].aux.port = &picohal_a_out[idx];
@@ -462,11 +424,11 @@ void picohal_io_init (void) {
 
     ioports_add_analog(&aports);
 
+    // spindle configuration must be run now
+    picohal_spindle_init();
+
     // delay final setup until startup is complete
     task_run_on_startup(complete_setup, NULL);
-
-    picospindle_init();
-
 }
 
 #endif // PICOHAL_IO_ENABLE
