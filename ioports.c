@@ -108,7 +108,7 @@ static void picohal_rx_packet (modbus_message_t *msg)
 
 static void raise_alarm (void *data)
 {
-    system_raise_alarm(Alarm_AbortCycle);
+    system_raise_alarm(Alarm_ExpanderException);
     report_message("PicoHAL communication error.", Message_Warning);
     picohal_d_out[0] = 0; // null out all outputs in grblHAL
 }
@@ -122,7 +122,7 @@ static void picohal_rx_exception (uint8_t code, void *context)
     }
     else{
         if(picohal_is_online){ //only raise alarm if comms issue is new??
-            system_raise_alarm(Alarm_AbortCycle);
+            system_raise_alarm(Alarm_ExpanderException);
             report_message("PicoHAL communication error.", Message_Warning);
             picohal_d_out[0] = 0; // null out all outputs in grblHAL
 
@@ -143,7 +143,7 @@ bool picohal_send_message_now (modbus_message_t *data, bool block){
     
     if(!(okay = modbus_send(data, &callbacks, block))) {
         if(state_get() != STATE_IDLE)
-            system_raise_alarm(Alarm_AbortCycle);
+            system_raise_alarm(Alarm_ExpanderException);
         report_message("PicoHAL communication error.", Message_Warning);
         picohal_d_out[0] = 0; // null out all outputs in grblHAL (is this assuming keepalive is working so picohal outputs will be off . . . ?)
 
