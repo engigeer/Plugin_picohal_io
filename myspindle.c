@@ -178,7 +178,7 @@ static const spindle_ptrs_t spindle = {
 static void OnReset (void)
 {
     // Ensure spindle is off on RESET (TODO: also set power to zero?, also is this correct? how does it interact with iosender . . .)
-    spindle_all_off();
+    // spindle_all_off(false);
 
     driver_reset();
 }
