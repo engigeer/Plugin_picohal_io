@@ -463,7 +463,18 @@ void picohal_io_init (void) {
     ioports_add_analog(&aports);
 
     // delay final setup until startup is complete
-    task_run_on_startup(complete_setup, NULL);
+    //task_run_on_startup(complete_setup, NULL);
+    
+    on_enumerate_pins = hal.enumerate_pins;
+    hal.enumerate_pins = onEnumeratePins;
+
+    on_report_options = grbl.on_report_options;
+    grbl.on_report_options = onReportOptions;
+
+    driver_reset = hal.driver_reset;
+    hal.driver_reset = OnReset;
+
+    task_run_on_startup(picohal_send_keepalive, NULL);
 
     picospindle_init();
 
