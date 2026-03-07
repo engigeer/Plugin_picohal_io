@@ -31,11 +31,11 @@
 #if PICOHAL_IO_ENABLE == 1
 
 #ifndef PICOHAL_PORTS
-    PICOHAL_PORTS = 8;
+    #define PICOHAL_PORTS 8
 #endif
 
 #if PICOHAL_PORTS > 8
-    PICOHAL_PORTS = 8;
+    #define PICOHAL_PORTS 8
 #endif
 
 static enumerate_pins_ptr on_enumerate_pins;
@@ -191,9 +191,9 @@ static void digital_out_ll (xbar_t *output, float value)
     uint16_t *val = (uint16_t *)aux_dout[output->id].aux.port; //get current value
 
     if(on)
-        *val |= (1 << aux_dout[output->id].aux.pin);
+        *val |= (1 << aux_dout[output->id].aux.id);
     else
-        *val &= ~(1 << aux_dout[output->id].aux.pin);
+        *val &= ~(1 << aux_dout[output->id].aux.id);
 
     modbus_message_t data = {
         .context = NULL,
@@ -223,7 +223,7 @@ static bool digital_out_cfg (xbar_t *output, gpio_out_config_t *config, bool per
 
         if(config->inverted != aux_dout[output->id].aux.mode.inverted) {
             aux_dout[output->id].aux.mode.inverted = config->inverted;
-            digital_out(output->pin, (((*(uint16_t *)output->port) >> output->pin) & 1) ^ config->inverted);
+            digital_out_ll(output, (float)(!(*(uint16_t *)output->port & (1 >> output->id)) ^ config->inverted));
         }
         // Open drain not supported
 
@@ -249,7 +249,7 @@ static float digital_out_state (xbar_t *output)
     float value = -1.0f;
 
     if(output->id < digital.out.n_ports)
-        value = (float)(!!(*(uint16_t *)output->port & (1 << output->pin)));
+        value = (float)(!!(*(uint16_t *)output->port & (1 << output->id)));
 
     return value;
 }
@@ -411,7 +411,7 @@ void picohal_io_init (void) {
     for(idx = 0; idx < digital.out.n_ports; idx ++) {
         aux_dout[idx].addr = PICOHAL_ADDR_DOUT;
         aux_dout[idx].aux.id = idx;
-        aux_dout[idx].aux.pin = idx;
+        aux_dout[idx].aux.pin = idx+30;
         aux_dout[idx].aux.port = &picohal_d_out;
         aux_dout[idx].aux.function = aux_dout_base + idx;
         aux_dout[idx].aux.group = PinGroup_AuxOutput;
@@ -422,7 +422,6 @@ void picohal_io_init (void) {
         aux_dout[idx].aux.cap.claimable = On;
         aux_dout[idx].aux.mode.inverted = Off;
         aux_dout[idx].aux.mode.output = On;
-        aux_dout[idx].aux.mode.analog = On;
     }
 
     io_digital_t dports = {
