@@ -31,7 +31,7 @@
 #define PICOHAL_ADDRESS               10
 #endif
 
-#define PICOHAL_RETRIES               5
+#define PICOHAL_RETRIES               2
 #define PICOHAL_RETRY_DELAY           250
 #define PICOHAL_KEEPALIVE_INTERVAL    1000
 
