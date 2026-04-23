@@ -122,11 +122,10 @@ static void picohal_rx_exception (uint8_t code, void *context)
     if(sys.cold_start){
         task_add_immediate(raise_alarm, NULL);
     }
-    else if (picohal_timeout_count--) {
-        report_message("PicoHAL missed keepalive.", Message_Warning);
-    }
-    else{
-        if(picohal_is_online){ //only raise alarm if comms issue is new??
+    else if (picohal_is_online) {
+        if (picohal_timeout_count--)
+            report_message("PicoHAL missed keepalive.", Message_Warning);
+        else{
             system_raise_alarm(Alarm_ExpanderException);
             report_message("PicoHAL communication error.", Message_Warning);
             picohal_d_out[0] = 0; // null out all outputs in grblHAL
