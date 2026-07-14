@@ -55,7 +55,7 @@ static void spindleSetRPM (float rpm, bool block)
 {
     uint16_t rpm_value = (uint16_t)rpm; // convert float to integer
 
-    if (!toggle_state)
+    if (!toggle_state) // ensure toggle is still respected if new rpm is commanded
         rpm = 0;
 
     modbus_message_t data = {
@@ -105,7 +105,7 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
     toggle_state = 1;
 
     if(picohal_send_message_now(&data, sys.reset_pending))
-        spindleSetRPM(rpm, false);
+        spindleSetSpeed(spindle, rpm);
 }
 
 // Returns spindle state in a spindle_state_t variable
