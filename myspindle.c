@@ -53,10 +53,8 @@ static bool toggle_state = 1;
 
 static void spindleSetRPM (float rpm, bool block)
 {
-    uint16_t rpm_value = (uint16_t)rpm; // convert float to integer
-
-    if (!toggle_state) // ensure toggle is still respected if new rpm is commanded
-        rpm = 0;
+ // ensure toggle is still respected if new rpm is commanded
+    uint16_t rpm_value = toggle_state ? (uint16_t)rpm : 0; // convert float to integer
 
     modbus_message_t data = {
         .context = NULL,
@@ -100,9 +98,11 @@ static void spindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, flo
         .rx_length = 8
     };
 
+    if(!spindle_state.on || !state.on) {
+        toggle_state = 1;
+    }
     spindle_state.on = state.on;
     spindle_state.ccw = state.ccw;
-    toggle_state = 1;
 
     if(picohal_send_message_now(&data, sys.reset_pending))
         spindleSetSpeed(spindle, rpm);
